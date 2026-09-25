@@ -42,6 +42,21 @@
   body.player-mode #gearBtn{ display:none !important; }
   body.player-mode #settingsPanel{ display:none !important; }
   body.player-mode .sync-badge{ display:inline-flex !important; }
+  body.player-mode .progress-wrap{ display:flex !important; }
+
+  .progress-wrap{
+    display:none;align-items:center;gap:8px;flex:1;max-width:340px;margin:0 16px;
+  }
+  .progress-track{
+    flex:1;height:8px;border-radius:5px;background:var(--panel-2);
+    border:1px solid var(--line);overflow:hidden;
+  }
+  .progress-fill{
+    height:100%;width:0%;border-radius:5px;
+    background:linear-gradient(90deg, var(--accent-dim), var(--accent));
+    transition:width .35s ease;
+  }
+  .progress-pct{font-size:11px;color:var(--text-dim);min-width:34px;text-align:right;}
   .sync-badge{
     display:none;align-items:center;gap:6px;font-size:10px;letter-spacing:.04em;
     color:var(--text-dim);padding:4px 8px;border:1px solid var(--line);border-radius:12px;
@@ -142,6 +157,10 @@
       <span class="dot"></span>
       <span class="brand-title">Stanice Orion</span>
     </div>
+    <div class="progress-wrap" id="progressWrap">
+      <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+      <span class="progress-pct" id="progressPct">0%</span>
+    </div>
     <div style="display:flex;gap:8px;align-items:center;">
       <span class="sync-badge" id="syncBadge"><span class="dot2"></span><span id="syncBadgeText">offline</span></span>
       <button class="gear-btn" id="fullscreenBtn" title="Celá obrazovka">&#9974;</button>
@@ -171,8 +190,11 @@
     <div class="status" id="runeMsg"></div>
     <div id="rootActions" style="display:none;">
       <div style="height:1px;background:var(--line);margin:14px 0;"></div>
-      <button id="revealAllBtn" style="width:100%;margin-bottom:8px;">Odhalit vše</button>
-      <button id="hideAllBtn" class="danger-btn" style="width:100%;">Zakrýt vše</button>
+      <button id="revealAllBtn" style="width:100%;margin-bottom:8px;">Odhalit celou mapu</button>
+      <button id="hideAllBtn" class="danger-btn" style="width:100%;">Zakrýt celou mapu</button>
+      <div style="height:1px;background:var(--line);margin:14px 0;"></div>
+      <button id="revealAllRunesBtn" style="width:100%;margin-bottom:8px;">Odhalit všechny runy</button>
+      <button id="hideAllRunesBtn" class="danger-btn" style="width:100%;">Zakrýt všechny runy</button>
     </div>
   </div>
 
@@ -1504,7 +1526,22 @@
     });
   }
 
+  function updateProgress(){
+    const roomIds = Object.keys(ROOMS).filter(rid => ROOMS[rid].selectable);
+    const doneRooms = roomIds.filter(rid => revealed.has(rid)).length;
+    const runeIds = RUNES.filter(r => r.gx !== undefined);
+    const doneRunes = runeIds.filter(r => activeRunes.has(r.num)).length;
+    const total = roomIds.length + runeIds.length;
+    const done = doneRooms + doneRunes;
+    const pct = total > 0 ? Math.round((done/total)*100) : 0;
+    const fill = document.getElementById('progressFill');
+    const pctEl = document.getElementById('progressPct');
+    if(fill) fill.style.width = pct + '%';
+    if(pctEl) pctEl.textContent = pct + '%';
+  }
+
   function render(){
+    updateProgress();
     canvas.innerHTML = '';
     if(revealed.size === 0 && activeRunes.size === 0){
       emptyHint.style.display = '';
@@ -1719,13 +1756,17 @@
       title.textContent = 'Runy';
       for(const rune of RUNES){
         grid.appendChild(makeTile('Runa ' + rune.num, ()=>{
-          if(rune.room && !revealed.has(rune.room)){
+          const isActive = activeRunes.has(rune.num);
+          // the "room must be revealed first" gate only applies to *revealing* a rune -
+          // hiding an already-active rune is always allowed, even if the room got hidden
+          // again afterwards (e.g. via "Zakrýt celou mapu")
+          if(!isActive && rune.room && !revealed.has(rune.room)){
             document.getElementById('runeMsg').textContent =
               'Místnost, ve které se nachází tato runa, ještě nebyla objevena.';
             return;
           }
           document.getElementById('runeMsg').textContent = '';
-          if(activeRunes.has(rune.num)) activeRunes.delete(rune.num);
+          if(isActive) activeRunes.delete(rune.num);
           else activeRunes.add(rune.num);
           render(); saveState(); renderNav();
         }, {active: activeRunes.has(rune.num), disabled: rune.gx === undefined}));
@@ -1807,6 +1848,20 @@
   document.getElementById('hideAllBtn').addEventListener('click', ()=>{
     customConfirm('Opravdu chceš zakrýt celou mapu?', ()=>{
       revealed = new Set();
+      render(); saveState(); renderNav();
+    });
+  });
+
+  document.getElementById('revealAllRunesBtn').addEventListener('click', ()=>{
+    customConfirm('Opravdu chceš odhalit všechny runy?', ()=>{
+      activeRunes = new Set(RUNES.filter(r => r.gx !== undefined).map(r => r.num));
+      render(); saveState(); renderNav();
+    });
+  });
+
+  document.getElementById('hideAllRunesBtn').addEventListener('click', ()=>{
+    customConfirm('Opravdu chceš zakrýt všechny runy?', ()=>{
+      activeRunes = new Set();
       render(); saveState(); renderNav();
     });
   });
