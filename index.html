@@ -102,6 +102,42 @@
     background:#e2222f; border-radius:50% 50% 50% 50% / 62% 62% 38% 38%;
     box-shadow:0 0 8px rgba(216,31,44,.8); pointer-events:none; z-index:5;
   }
+  /* a drip running down the OUTSIDE of the glass once the tube overflows at 100% -
+     spawned as a fixed-position element (not inside tube-wrap) so it isn't clipped by
+     the tube's own overflow:hidden as it runs past the bottom of the glass */
+  .tube-drip{
+    position:fixed; width:4px; border-radius:2px;
+    background:linear-gradient(180deg, #e2222f 0%, rgba(226,34,47,0) 100%);
+    pointer-events:none; z-index:19;
+  }
+
+  /* ---- "station fully mapped" moment at 100% - player screen only ---- */
+  .station-complete-flash{
+    position:fixed; inset:0; z-index:9990; pointer-events:none; opacity:0;
+    background:radial-gradient(ellipse at 50% 30%, rgba(216,31,44,.55) 0%, rgba(120,10,18,.22) 40%, rgba(0,0,0,0) 75%);
+  }
+  body.player-mode .station-complete-flash.show{ animation:stationFlash 1.2s ease-out; }
+  @keyframes stationFlash{ 0%{opacity:0;} 12%{opacity:1;} 100%{opacity:0;} }
+
+  .station-complete-banner{
+    position:fixed; left:50%; top:42%; transform:translate(-50%,-50%); z-index:9991;
+    text-align:center; pointer-events:none; opacity:0;
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+  }
+  .station-complete-banner .line1{
+    font-size:13px;letter-spacing:.5em;text-transform:uppercase;color:#ff8a93;margin-bottom:10px;
+  }
+  .station-complete-banner .line2{
+    font-size:28px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#fff;
+    text-shadow:0 0 18px rgba(216,31,44,.9), 0 0 42px rgba(216,31,44,.55);
+  }
+  body.player-mode .station-complete-banner.show{ animation:stationBanner 3.6s ease-in-out; }
+  @keyframes stationBanner{
+    0%{ opacity:0; transform:translate(-50%,-46%); }
+    12%{ opacity:1; transform:translate(-50%,-50%); }
+    84%{ opacity:1; transform:translate(-50%,-50%); }
+    100%{ opacity:0; transform:translate(-50%,-54%); }
+  }
 
   /* ---- entry gate screen (shown first; its button triggers fullscreen) ----
      Original hellish/demonic mood board: near-black background, a slow rising
@@ -344,6 +380,12 @@
     <div class="tube-glass-shine"></div>
   </div>
   <div class="tube-label"><span id="tubePct">0%</span>Odhaleno</div>
+
+  <div class="station-complete-flash" id="stationCompleteFlash"></div>
+  <div class="station-complete-banner" id="stationCompleteBanner">
+    <div class="line1">Stanice Orion</div>
+    <div class="line2">Plně zmapována</div>
+  </div>
 
   <div id="mapStage">
     <div id="mapCanvas"></div>
@@ -1733,6 +1775,44 @@
     }
   }
 
+  // Runs a small stream of drips down the OUTSIDE of the tube glass, past its bottom
+  // edge - positioned as fixed elements anchored to the tube's live bounding box so they
+  // aren't clipped by the tube's own overflow:hidden.
+  function spawnOverflowDrip(){
+    const tube = document.getElementById('tubeWrap');
+    if(!tube) return;
+    const rect = tube.getBoundingClientRect();
+    const drip = document.createElement('div');
+    drip.className = 'tube-drip';
+    drip.style.left = (rect.left + rect.width*(0.12 + Math.random()*0.76)) + 'px';
+    drip.style.top = rect.top + 'px';
+    document.body.appendChild(drip);
+    const fallDistance = 50 + Math.random()*90;
+    const duration = 1300 + Math.random()*700;
+    if(typeof drip.animate === 'function'){
+      const anim = drip.animate([
+        { height:'0px', opacity:.95 },
+        { height: fallDistance+'px', opacity:.85, offset:.72 },
+        { height: fallDistance+'px', opacity:0 }
+      ], { duration, easing:'ease-in' });
+      anim.onfinish = () => drip.remove();
+    } else {
+      setTimeout(()=> drip.remove(), duration);
+    }
+  }
+
+  // The moment the vial hits 100% - overflow drips down the glass, a red flash across the
+  // screen, and a banner - player screen only, the GM's own view stays calm and businesslike.
+  let stationFullyRevealed = false;
+  function triggerStationComplete(){
+    if(!document.body.classList.contains('player-mode')) return;
+    const flash = document.getElementById('stationCompleteFlash');
+    const banner = document.getElementById('stationCompleteBanner');
+    if(flash){ flash.classList.remove('show'); void flash.offsetWidth; flash.classList.add('show'); }
+    if(banner){ banner.classList.remove('show'); void banner.offsetWidth; banner.classList.add('show'); }
+    for(let i=0;i<7;i++) setTimeout(spawnOverflowDrip, i*160);
+  }
+
   let lastDoneCount = 0;
   let lastPct = 0;
   let progressInitialized = false; // avoids a flurry of drops when restoring saved state on load
@@ -1750,6 +1830,11 @@
 
     function setLevel(){
       if(liquid){ liquid.style.height = pct + '%'; liquid.classList.toggle('empty', pct <= 0); }
+      if(pct >= 100){
+        if(!stationFullyRevealed){ stationFullyRevealed = true; triggerStationComplete(); }
+      } else {
+        stationFullyRevealed = false;
+      }
     }
 
     if(!progressInitialized){
