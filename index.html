@@ -48,15 +48,37 @@
     display:none;align-items:center;gap:8px;flex:1;max-width:340px;margin:0 16px;
   }
   .progress-track{
-    flex:1;height:8px;border-radius:5px;background:var(--panel-2);
-    border:1px solid var(--line);overflow:hidden;
+    flex:1;height:10px;border-radius:5px;background:var(--panel-2);
+    border:1.5px solid #ffffff;overflow:hidden;
   }
   .progress-fill{
-    height:100%;width:0%;border-radius:5px;
-    background:linear-gradient(90deg, var(--accent-dim), var(--accent));
+    height:100%;width:0%;border-radius:3px;
+    background:#22c93a;
+    box-shadow:0 0 6px rgba(34,201,58,.6) inset;
     transition:width .35s ease;
   }
-  .progress-pct{font-size:11px;color:var(--text-dim);min-width:34px;text-align:right;}
+  .progress-pct{font-size:15px;color:#ffffff;font-weight:700;min-width:44px;text-align:right;}
+
+  /* ---- boot / loading screen ---- */
+  #bootScreen{
+    position:fixed;inset:0;background:#000;z-index:9999;
+    display:flex;align-items:center;justify-content:center;
+    transition:opacity .6s ease;
+  }
+  #bootScreen.hide{opacity:0;pointer-events:none;}
+  #matrixCanvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
+  #bootText{
+    position:relative;z-index:1;color:#22ff55;
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+    font-size:14px;line-height:1.7;text-shadow:0 0 6px #22ff55,0 0 14px rgba(34,255,85,.5);
+    padding:24px;max-width:92%;width:520px;
+  }
+  #bootLines{margin:0;white-space:pre-wrap;word-break:break-word;min-height:1.7em;}
+  #bootCursor{display:inline-block;width:8px;background:#22ff55;animation:bootblink 1s step-end infinite;}
+  @keyframes bootblink{50%{opacity:0;}}
+  @media (max-width:480px){
+    #bootText{font-size:12px;padding:16px;}
+  }
   .sync-badge{
     display:none;align-items:center;gap:6px;font-size:10px;letter-spacing:.04em;
     color:var(--text-dim);padding:4px 8px;border:1px solid var(--line);border-radius:12px;
@@ -150,6 +172,12 @@
 </style>
 </head>
 <body>
+
+<div id="bootScreen">
+  <canvas id="matrixCanvas"></canvas>
+  <div id="bootText"><pre id="bootLines"></pre></div>
+</div>
+
 <div id="app">
 
   <div class="topbar">
@@ -1934,11 +1962,84 @@
     apply();
   }
 
+  // ---------- boot / loading screen ----------
+  // Purely cosmetic ~5s "connecting to the station" splash, Matrix-style green-on-black,
+  // shown while the real app underneath is already loading/loaded - it just hides it.
+  function startMatrixRain(){
+    const canvas = document.getElementById('matrixCanvas');
+    const ctx = canvas.getContext('2d');
+    function resize(){ canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+    resize();
+    window.addEventListener('resize', resize);
+    const glyphs = 'アイウエオカキクケコサシスセソ0123456789<>[]{}/\\|=+*#$%';
+    const fontSize = 16;
+    let columns = Math.floor(canvas.width / fontSize);
+    let drops = new Array(columns).fill(0).map(()=> Math.random()*-40);
+    const timer = setInterval(()=>{
+      ctx.fillStyle = 'rgba(0,0,0,0.08)';
+      ctx.fillRect(0,0,canvas.width,canvas.height);
+      ctx.font = fontSize + 'px monospace';
+      for(let x=0; x<drops.length; x++){
+        const ch = glyphs[Math.floor(Math.random()*glyphs.length)];
+        ctx.fillStyle = Math.random() < 0.06 ? '#c8ffd8' : '#22c93a';
+        ctx.fillText(ch, x*fontSize, drops[x]*fontSize);
+        if(drops[x]*fontSize > canvas.height && Math.random() > 0.975) drops[x] = 0;
+        drops[x]++;
+      }
+    }, 45);
+    return () => { clearInterval(timer); window.removeEventListener('resize', resize); };
+  }
+
+  function runBootSequence(){
+    const stopRain = startMatrixRain();
+    const linesEl = document.getElementById('bootLines');
+    const screen = document.getElementById('bootScreen');
+    const lines = [
+      'INICIALIZACE SYSTÉMU...',
+      'PŘIPOJOVÁNÍ K SERVERU STANICE ORION...',
+      'OVĚŘOVÁNÍ PŘÍSTUPOVÝCH PRÁV... OK',
+      'SYNCHRONIZACE DAT SE STANICÍ...',
+      'NAČÍTÁNÍ MAPY STANICE...',
+      'PŘIPOJENO.'
+    ];
+    let text = '';
+    let i = 0;
+    function typeLine(){
+      if(i >= lines.length){
+        setTimeout(()=>{
+          screen.classList.add('hide');
+          stopRain();
+          setTimeout(()=> screen.remove(), 700);
+        }, 450);
+        return;
+      }
+      const line = lines[i];
+      let c = 0;
+      function typeChar(){
+        if(c <= line.length){
+          linesEl.innerHTML = escapeHtml(text + line.slice(0, c)) + '<span id="bootCursor">&nbsp;</span>';
+          c++;
+          setTimeout(typeChar, 18);
+        } else {
+          text += line + '\n';
+          i++;
+          setTimeout(typeLine, 220);
+        }
+      }
+      typeChar();
+    }
+    function escapeHtml(s){
+      return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+    typeLine();
+  }
+
   // ---------- init ----------
   renderNav();
   loadState();
   setupPanZoom();
   initFirestoreSync();
+  runBootSequence();
 })();
 </script>
 </body>
