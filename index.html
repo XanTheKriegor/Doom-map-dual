@@ -168,8 +168,20 @@
   #tubeCrack.show{ animation:crackFlash 3s ease-out; }
   @keyframes crackFlash{
     0%{ opacity:0; } 4%{ opacity:1; } 9%{ opacity:.5; } 13%{ opacity:1; }
-    72%{ opacity:.8; } 100%{ opacity:0; }
+    72%{ opacity:.8; } 100%{ opacity:.5; }
   }
+  /* resting state once the tube has cracked - stays visible (no animation) until the
+     map is hidden again, including across a page reload/re-login */
+  #tubeCrack.persist{ opacity:.5; }
+
+  /* a permanent thin trickle down the outside of the glass while the station is fully
+     mapped, so a reloaded/re-logged-in tablet still reads as "already overflowed" */
+  .tube-overflow-trace{
+    position:absolute; top:-2px; width:3px; height:0; border-radius:2px;
+    background:linear-gradient(180deg, #e2222f 0%, rgba(226,34,47,.55) 70%, rgba(226,34,47,0) 100%);
+    opacity:0; pointer-events:none; z-index:6; transition:opacity .6s ease, height .6s ease;
+  }
+  .tube-wrap.station-complete .tube-overflow-trace{ opacity:.9; height:34px; }
 
   /* ---- entry gate screen (shown first; its button triggers fullscreen) ----
      Original hellish/demonic mood board: near-black background, a slow rising
@@ -410,6 +422,8 @@
     </div>
     <div class="tube-ticks"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
     <div class="tube-glass-shine"></div>
+    <div class="tube-overflow-trace" id="tubeOverflowTrace" style="left:38%;"></div>
+    <div class="tube-overflow-trace" id="tubeOverflowTrace2" style="left:58%;"></div>
     <svg id="tubeCrack" viewBox="0 0 100 100" preserveAspectRatio="none">
       <path d="M52,2 L47,16 L59,24 L45,36 L61,47 L43,59 L57,71 L49,84 L54,98"/>
       <path d="M52,2 L64,9 L56,20"/>
@@ -1849,13 +1863,33 @@
     const crack = document.getElementById('tubeCrack');
     if(flash){ flash.classList.remove('show'); void flash.offsetWidth; flash.classList.add('show'); }
     if(banner){ banner.classList.remove('show'); void banner.offsetWidth; banner.classList.add('show'); }
-    if(crack){ crack.classList.remove('show'); void crack.offsetWidth; crack.classList.add('show'); }
+    // 'persist' is added alongside 'show' so that once the flash-in animation finishes,
+    // the crack settles into its steady "already broken" look instead of fading back to 0
+    if(crack){ crack.classList.remove('show'); void crack.offsetWidth; crack.classList.add('show'); crack.classList.add('persist'); }
     // an immediate little burst, then a steady overflow stream for a few seconds so the
     // tube reads as genuinely overflowing rather than just spitting out a handful of drops
     for(let i=0;i<5;i++) setTimeout(spawnOverflowDrip, i*70);
     const streamMs = 3200;
     const streamTimer = setInterval(spawnOverflowDrip, 150);
     setTimeout(()=> clearInterval(streamTimer), streamMs);
+  }
+
+  // Keeps the cracked-glass / overflow-trickle look in sync with the CURRENT state,
+  // regardless of how that state was reached - so a fully-mapped station still looks
+  // fully mapped (cracked tube, trickle down the glass) after the app is closed and
+  // reopened, even though the one-off flash/banner/drip-burst only plays once, live.
+  function setStationCompleteVisual(isComplete){
+    const wrap = document.getElementById('tubeWrap');
+    const crack = document.getElementById('tubeCrack');
+    if(wrap) wrap.classList.toggle('station-complete', isComplete);
+    if(crack){
+      if(isComplete){
+        crack.classList.add('persist');
+      } else {
+        crack.classList.remove('persist');
+        crack.classList.remove('show');
+      }
+    }
   }
 
   let lastDoneCount = 0;
@@ -1875,13 +1909,14 @@
 
     function setLevel(isInitial){
       if(liquid){ liquid.style.height = pct + '%'; liquid.classList.toggle('empty', pct <= 0); }
+      setStationCompleteVisual(pct >= 100);
       if(pct >= 100){
         if(!stationFullyRevealed){
           stationFullyRevealed = true;
-          // Only celebrate on a LIVE transition to 100%. If the page loads with
-          // the map already fully revealed (e.g. reload after finishing), skip
-          // the effect entirely rather than let it play out hidden behind the
-          // gate/boot overlay.
+          // Only play the one-shot flash/banner/drip-burst on a LIVE transition to 100%.
+          // If the page loads with the map already fully revealed (e.g. reopening the
+          // app after finishing), the persistent cracked/overflowing look above already
+          // shows the state - no need to replay the whole celebration every time.
           if(!isInitial) triggerStationComplete();
         }
       } else {
