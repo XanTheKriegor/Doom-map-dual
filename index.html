@@ -1,0 +1,1890 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stanice Orion</title>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+<style>
+  :root{
+    --bg: #05070a;
+    --panel: #12171b;
+    --panel-2: #1a2126;
+    --line: #263138;
+    --text: #d7dee2;
+    --text-dim: #7f8f97;
+    --accent: #ffb454;
+    --accent-dim: #7a5a2c;
+    --danger: #e0654f;
+    --room-fill: #FFFF00;
+    --corridor-fill: #00FFFF;
+    --room-stroke: #05070a;
+    --door: #ffb454;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;height:100%;background:var(--bg);color:var(--text);
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+    user-select:none;-webkit-user-select:none;}
+  #app{height:100%;display:flex;flex-direction:column;position:relative;}
+
+  .topbar{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:12px 16px;border-bottom:1px solid var(--line);
+    background:var(--panel);
+    flex-shrink:0;position:relative;z-index:5;
+  }
+  .brand{display:flex;align-items:baseline;gap:10px;}
+  .brand .dot{width:8px;height:8px;border-radius:50%;background:var(--accent);display:inline-block;box-shadow:0 0 8px var(--accent);}
+  .brand-title{font-size:14px;letter-spacing:.05em;color:var(--text);font-weight:600;}
+
+  /* player mode: bare map only, no GM controls visible */
+  body.player-mode #gearBtn{ display:none !important; }
+  body.player-mode #settingsPanel{ display:none !important; }
+  body.player-mode .sync-badge{ display:inline-flex !important; }
+  .sync-badge{
+    display:none;align-items:center;gap:6px;font-size:10px;letter-spacing:.04em;
+    color:var(--text-dim);padding:4px 8px;border:1px solid var(--line);border-radius:12px;
+  }
+  .sync-badge .dot2{width:6px;height:6px;border-radius:50%;background:var(--text-dim);}
+  .sync-badge.live .dot2{background:#4caf50;box-shadow:0 0 6px #4caf50;}
+  .sync-badge.err .dot2{background:var(--danger);box-shadow:0 0 6px var(--danger);}
+
+  .gear-btn{
+    width:36px;height:36px;border-radius:6px;
+    background:var(--panel-2);color:var(--text);border:1px solid var(--line);
+    cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;
+    transition:border-color .15s ease, color .15s ease, transform .15s ease;
+  }
+  .gear-btn:hover{border-color:var(--accent);color:var(--accent);}
+  .gear-btn.active{border-color:var(--accent);color:var(--accent);transform:rotate(30deg);}
+
+  #mapStage{
+    flex:1;min-height:0;position:relative;overflow:hidden;
+    background: radial-gradient(ellipse at 50% 30%, #0d1418 0%, var(--bg) 65%);
+    cursor:grab;touch-action:none;
+  }
+  #mapStage.dragging{cursor:grabbing;}
+  #mapCanvas{position:absolute;top:0;left:0;transform-origin:0 0;}
+  #mapCanvas svg{display:block;}
+  .empty-hint{
+    position:absolute;color:var(--text-dim);font-size:12px;letter-spacing:.05em;
+    top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;
+  }
+  .zoomctl{
+    position:absolute;right:16px;bottom:16px;display:flex;flex-direction:column;gap:6px;z-index:4;
+  }
+  .zoomctl button{width:34px;height:34px;padding:0;font-size:16px;line-height:1;}
+
+  /* ---------- settings panel (popover) ---------- */
+  #settingsPanel{
+    position:absolute;top:60px;right:16px;width:300px;max-height:calc(100vh - 80px);overflow-y:auto;
+    background:var(--panel);border:1px solid var(--line);border-radius:8px;
+    padding:18px;box-shadow:0 12px 30px rgba(0,0,0,.5);
+    z-index:10;display:none;
+  }
+  #settingsPanel.open{display:block;}
+  #settingsPanel h2{margin:0 0 4px;font-size:13px;letter-spacing:.05em;color:var(--text);font-weight:600;}
+  #settingsPanel .hint{margin:0 0 14px;font-size:11px;color:var(--text-dim);line-height:1.5;}
+  #navHeader{display:flex;align-items:center;gap:8px;margin-bottom:12px;min-height:28px;}
+  #navHeader button{padding:6px 10px;font-size:12px;flex-shrink:0;}
+  #navTitle{font-size:13px;letter-spacing:.04em;color:var(--text);font-weight:600;}
+  #tileGrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;max-height:60vh;overflow-y:auto;padding-right:2px;}
+  .tile{
+    font-family:inherit;font-size:12.5px;line-height:1.3;cursor:pointer;
+    background:var(--panel-2);color:var(--text);border:1px solid var(--line);
+    border-radius:6px;padding:12px 8px;min-height:46px;
+    display:flex;align-items:center;justify-content:center;text-align:center;
+    transition:border-color .15s ease, background .15s ease, color .15s ease;
+  }
+  .tile:hover{border-color:var(--accent);color:var(--accent);}
+  .tile.active{background:var(--accent-dim);border-color:var(--accent);color:#1a1206;font-weight:600;}
+  .tile.active:hover{color:#000;}
+  .tile.disabled{opacity:.35;cursor:not-allowed;pointer-events:none;}
+  label{display:block;font-size:11px;color:var(--text-dim);letter-spacing:.05em;margin-bottom:6px;}
+  select{
+    width:100%;font-family:inherit;font-size:13px;background:var(--panel-2);color:var(--text);
+    border:1px solid var(--line);border-radius:4px;padding:8px 9px;margin-bottom:12px;
+  }
+  select:focus{outline:none;border-color:var(--accent);}
+  select:disabled{opacity:.4;cursor:not-allowed;}
+  button{
+    font-family:inherit;font-size:13px;cursor:pointer;
+    background:var(--panel-2);color:var(--text);border:1px solid var(--line);
+    padding:8px 14px;border-radius:4px;
+    transition:border-color .15s ease, color .15s ease;
+  }
+  button:hover{border-color:var(--accent);color:var(--accent);}
+  button.primary{background:var(--accent-dim);border-color:var(--accent);color:#1a1206;font-weight:600;width:100%;}
+  button.primary:hover{color:#000;}
+  button:disabled{opacity:.35;cursor:not-allowed;}
+  .danger-btn{border-color:var(--danger);color:var(--danger);}
+  .danger-btn:hover{background:var(--danger);color:#1a0906;}
+  .status{min-height:16px;margin-top:10px;font-size:11px;color:var(--accent);}
+  #confirmOverlay{
+    position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:50;
+    display:flex;align-items:center;justify-content:center;padding:20px;
+  }
+  #confirmBox{
+    background:var(--panel);border:1px solid var(--line);border-radius:8px;
+    padding:20px;max-width:320px;width:100%;box-shadow:0 12px 30px rgba(0,0,0,.5);
+  }
+  #confirmBox p{margin:0 0 16px;font-size:13px;color:var(--text);line-height:1.5;}
+  #confirmBox .row{display:flex;gap:10px;}
+  #confirmBox .row button{flex:1;}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div class="topbar">
+    <div class="brand">
+      <span class="dot"></span>
+      <span class="brand-title">Stanice Orion</span>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <span class="sync-badge" id="syncBadge"><span class="dot2"></span><span id="syncBadgeText">offline</span></span>
+      <button class="gear-btn" id="fullscreenBtn" title="Celá obrazovka">&#9974;</button>
+      <button class="gear-btn" id="gearBtn" title="Nastavení / odhalování">&#9881;</button>
+    </div>
+  </div>
+
+  <div id="mapStage">
+    <div id="mapCanvas"></div>
+    <div class="empty-hint" id="emptyHint">zatím nic neobjeveno</div>
+    <div class="zoomctl">
+      <button id="zoomInBtn" title="přiblížit">+</button>
+      <button id="zoomOutBtn" title="oddálit">−</button>
+      <button id="zoomResetBtn" title="zpět na výchozí pohled" style="font-size:11px;">1:1</button>
+    </div>
+  </div>
+
+  <div id="settingsPanel">
+    <div id="navHeader">
+      <button id="navBackBtn" style="display:none;">&larr; Zpět</button>
+      <span id="navTitle">Menu</span>
+    </div>
+    <div id="sectionActions" style="display:none;margin-bottom:10px;">
+      <button id="revealSectionBtn" style="width:100%;">Odhalit celou sekci</button>
+    </div>
+    <div id="tileGrid"></div>
+    <div class="status" id="runeMsg"></div>
+    <div id="rootActions" style="display:none;">
+      <div style="height:1px;background:var(--line);margin:14px 0;"></div>
+      <button id="revealAllBtn" style="width:100%;margin-bottom:8px;">Odhalit vše</button>
+      <button id="hideAllBtn" class="danger-btn" style="width:100%;">Zakrýt vše</button>
+    </div>
+  </div>
+
+  <div id="confirmOverlay" style="display:none;">
+    <div id="confirmBox">
+      <p id="confirmText"></p>
+      <div class="row">
+        <button id="confirmNoBtn">Zrušit</button>
+        <button class="primary" id="confirmYesBtn">Potvrdit</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  // ---- room data (placeholder; will be replaced once the real map file is in) ----
+  const CELL = 32; // px per grid square
+
+  // Every room/corridor lives on one shared grid (gx,gy = top-left corner,
+  // in cells) so pieces line up with each other once revealed.
+  const ROOMS = {
+    'shuttle-bay-1': {
+      name: 'Shuttle bay 1',
+      type: 'room',
+      gx: 1, gy: 0, cols: 7, rows: 7,
+      // door in the bottom-right corner, opening downward only
+      doors: [ {row:6, col:6, side:'bottom'} ],
+      selectable: true
+    },
+    'corridor-1': {
+      name: 'Chodba 1',
+      type: 'corridor',
+      gx: 7, gy: 7, cols: 1, rows: 3,
+      // open on both ends (into shuttle bay above, into lobby below) - no doors drawn;
+      // draws its own wall against corridor-2 next door (they're separate corridors, not merged)
+      soloWalls: true,
+      doors: [],
+      openSides: ['top','bottom'],
+      selectable: false
+    },
+    'lobby': {
+      name: 'Lobby',
+      type: 'room',
+      // corridor 1 is 1 cell wide at col 1 (2nd from left), corridor 2 at col 2 (3rd from left) of lobby's top row
+      // wide (2-cell) door in the bottom row, columns 2-3 (2nd and 3rd square), leading to the garage corridor
+      gx: 6, gy: 10, cols: 4, rows: 3,
+      doors: [
+        {row:0, col:1, side:'top'}, {row:0, col:2, side:'top'},
+        {row:2, col:1, side:'bottom'}, {row:2, col:2, side:'bottom'}
+      ],
+      selectable: true,
+      autoReveal: ['corridor-1']
+    },
+    'corridor-2': {
+      name: 'Chodba 2',
+      type: 'corridor',
+      // 1 wide, 3 cells running upward from lobby's 3rd column into shuttle bay 2
+      gx: 8, gy: 7, cols: 1, rows: 3,
+      soloWalls: true,
+      doors: [],
+      openSides: ['top','bottom'],
+      selectable: false
+    },
+    'shuttle-bay-2': {
+      name: 'Shuttle bay 2',
+      type: 'room',
+      // sits right next to shuttle bay 1
+      gx: 8, gy: 0, cols: 7, rows: 7,
+      // door in the bottom-left corner, opening downward only
+      doors: [ {row:6, col:0, side:'bottom'} ],
+      selectable: true,
+      autoReveal: ['corridor-2']
+    },
+    'corridor-3': {
+      name: 'Chodba 3',
+      type: 'corridor',
+      // 2 wide, 5 long, straight down from lobby's wide door into the garage
+      gx: 7, gy: 13, cols: 2, rows: 5,
+      // open at the top (lobby's own wall already shows the door there);
+      // wide door at the bottom, into the garage
+      open: [ {row:0, col:0, side:'top'}, {row:0, col:1, side:'top'} ],
+      doors: [ {row:4, col:0, side:'bottom'}, {row:4, col:1, side:'bottom'} ],
+      selectable: false
+    },
+    'garage': {
+      name: 'Garage',
+      type: 'room',
+      gx: 6, gy: 18,
+      // bounding box: 8 cols x 16 rows (main body is 6x15, plus a 2x2 bump
+      // on the right at rows 3-4, plus a 2-cell nub below row 15)
+      cols: 8, rows: 16,
+      cells: (function(){
+        const cells = [];
+        for(let r=0; r<15; r++) for(let c=0; c<6; c++) cells.push([r,c]);
+        // 2x2 bump on the right side, rows 3-4 (1-indexed) -> rows 2-3 (0-indexed)
+        cells.push([2,6]); cells.push([2,7]); cells.push([3,6]); cells.push([3,7]);
+        // nub below the main body: row 16 (1-indexed) -> row 15 (0-indexed), cols 3-4 (1-indexed) -> cols 2-3
+        cells.push([15,2]); cells.push([15,3]);
+        return cells;
+      })(),
+      // wide door at the top (position 2-3 of the main body), matching corridor-3 straight above;
+      // plus a 2-wide door on the right side (rows 12-13) leading to the central-hub corridor
+      open: [ {row:0, col:1, side:'top'}, {row:0, col:2, side:'top'} ],
+      doors: [ {row:11, col:5, side:'right'}, {row:12, col:5, side:'right'} ],
+      selectable: true,
+      autoReveal: ['corridor-3']
+    },
+    'corridor-entry-1': {
+      name: 'Chodba entry 1',
+      type: 'corridor',
+      // from garage's door: 12 right, then 2 down (the door itself belongs to garage,
+      // not this corridor - just an open seam here)
+      gx: 12, gy: 29, cols: 12, rows: 4,
+      cells: (function(){
+        const cells = [];
+        for(let r=0; r<2; r++) for(let c=0; c<12; c++) cells.push([r,c]); // 12 right
+        for(const r of [2,3]) for(const c of [10,11]) cells.push([r,c]); // 2 down (corner only)
+        return cells;
+      })(),
+      // open where it meets garage's own door (no double wall)
+      open: [ {row:0, col:0, side:'left'}, {row:1, col:0, side:'left'} ],
+      // doors at position 8-9: top into power distribution room's corridor,
+      // bottom into medical clinic's corridor
+      doors: [ {row:0, col:7, side:'top'},    {row:0, col:8, side:'top'},
+               {row:1, col:7, side:'bottom'}, {row:1, col:8, side:'bottom'} ],
+      selectable: true
+    },
+    'corridor-entry-2': {
+      name: 'Chodba entry 2',
+      type: 'corridor',
+      // continues from corridor-entry-1's corner: 10 more right, then 4 down into central hub
+      gx: 12, gy: 29, cols: 22, rows: 8,
+      cells: (function(){
+        const cells = [];
+        for(const r of [2,3]) for(let c=10; c<22; c++) cells.push([r,c]); // 10 right (from the shared corner)
+        for(let r=4; r<8; r++) for(const c of [20,21]) cells.push([r,c]); // 4 down
+        return cells;
+      })(),
+      open: [],
+      // door into central hub
+      doors: [ {row:7, col:20, side:'bottom'}, {row:7, col:21, side:'bottom'} ],
+      selectable: true
+    },
+    'central-hub': {
+      name: 'Central hub',
+      type: 'room',
+      // 10x10, entered from the top-left corner (2-wide door from the north,
+      // lining up with corridor-4's ending door)
+      gx: 32, gy: 37, cols: 10, rows: 10,
+      open: [ {row:0, col:0, side:'top'}, {row:0, col:1, side:'top'} ],
+      doors: [
+        {row:0, col:8, side:'top', color:'#4a90ff'},    {row:0, col:9, side:'top', color:'#4a90ff'},    // top-right corner, up - blue
+        {row:9, col:8, side:'bottom', color:'#ffe14a'}, {row:9, col:9, side:'bottom', color:'#ffe14a'}, // bottom-right corner, down - yellow
+        {row:9, col:0, side:'bottom'}, {row:9, col:1, side:'bottom'}, // bottom-left corner, down
+        {row:4, col:9, side:'right', color:'#ff4a4a'},  {row:5, col:9, side:'right', color:'#ff4a4a'},  // middle of the right wall - red
+        {row:4, col:0, side:'left', gap:true},   {row:5, col:0, side:'left', gap:true}   // left wall, positions 5-6 - into WCF and WCM (separate doors)
+      ],
+      selectable: true
+    },
+    'wcf': {
+      name: 'WCF',
+      type: 'room',
+      // 3x4, right next to central hub's left wall; its top row lines up with
+      // central hub's 2nd row from the top
+      gx: 29, gy: 38, cols: 3, rows: 4,
+      open: [ {row:3, col:2, side:'right'} ], // matches central hub's door (position 5)
+      doors: [],
+      selectable: true
+    },
+    'wcm': {
+      name: 'WCM',
+      type: 'room',
+      // 3x4, directly below WCF
+      gx: 29, gy: 42, cols: 3, rows: 4,
+      open: [ {row:0, col:2, side:'right'} ], // matches central hub's door (position 6)
+      doors: [],
+      selectable: true
+    },
+    'corridor-5': {
+      name: 'Chodba 5',
+      type: 'corridor',
+      // 2 wide, 7 long, straight up from corridor-4's door into power distribution room
+      gx: 19, gy: 22, cols: 2, rows: 7,
+      // open at both ends: no doors into power distribution room's corridor
+      open: [ {row:6, col:0, side:'bottom'}, {row:6, col:1, side:'bottom'},
+              {row:0, col:0, side:'top'}, {row:0, col:1, side:'top'} ],
+      doors: [],
+      selectable: false
+    },
+    'power-distribution-room': {
+      name: 'Power distribution room',
+      type: 'room',
+      gx: 16, gy: 15, cols: 17, rows: 9,
+      cells: [[1,7],[1,8],[1,9],[1,10],[1,11],[1,12],
+        [2,7],[2,8],[2,9],[2,10],[2,11],[2,12],[2,13],[2,14],[2,15],[2,16],
+        [3,1],[3,2],[3,3],[3,4],[3,5],[3,6],[3,7],[3,8],[3,9],[3,10],[3,11],[3,12],[3,13],[3,14],[3,15],[3,16],
+        [4,0],[4,1],[4,2],[4,3],[4,4],[4,5],[4,6],[4,7],[4,8],[4,9],[4,10],[4,11],[4,12],[4,13],[4,14],[4,15],[4,16],
+        [5,0],[5,1],[5,2],[5,3],[5,4],[5,5],[5,6],[5,7],[5,8],[5,9],[5,10],[5,11],[5,12],[5,13],[5,14],[5,15],[5,16],
+        [6,1],[6,2],[6,3],[6,4],[6,5],[6,6],[6,7],[6,8],[6,9],[6,10],[6,11],[6,12],[6,14],[6,15],
+        [7,9],[7,10],[7,14],[7,15],
+        [8,9],[8,10]],
+      // no wall/door where corridor-5 meets the room from below
+      open: [ {row:6, col:3, side:'bottom'}, {row:6, col:4, side:'bottom'} ],
+      doors: [],
+      selectable: true,
+      autoReveal: ['corridor-5']
+    },
+    'corridor-6': {
+      name: 'Chodba 6',
+      type: 'corridor',
+      // 2 wide, 3 long, straight down from corridor-entry-1's bottom door into medical clinic
+      gx: 19, gy: 31, cols: 2, rows: 3,
+      // open at the top (corridor-entry-1's own door already marks it); real door at the bottom into the clinic
+      open: [ {row:0, col:0, side:'top'}, {row:0, col:1, side:'top'} ],
+      doors: [ {row:2, col:0, side:'bottom'}, {row:2, col:1, side:'bottom'} ],
+      selectable: false
+    },
+    'medical-clinic': {
+      name: 'Medical clinic',
+      type: 'room',
+      gx: 11, gy: 30, cols: 13, rows: 13,
+      cells: (function(){
+        const cells = [];
+        for(const c of [7,8,9,10]) cells.push([4,c]);
+        for(const c of [2,3,4,5,7,8,9,10]) cells.push([5,c]);
+        for(let c=1; c<=10; c++) cells.push([6,c]);
+        for(let c=1; c<=10; c++) cells.push([7,c]);
+        for(let c=2; c<=11; c++) cells.push([8,c]);
+        for(let c=2; c<=11; c++) cells.push([9,c]);
+        for(let c=2; c<=12; c++) cells.push([10,c]);
+        for(let c=2; c<=12; c++) cells.push([11,c]);
+        for(const c of [2,3,4,5]) cells.push([12,c]);
+        return cells;
+      })(),
+      // no wall/door where corridor-6 meets the room from above (already marked on the corridor)
+      open: [ {row:4, col:8, side:'top'}, {row:4, col:9, side:'top'} ],
+      doors: [],
+      selectable: true,
+      autoReveal: ['corridor-6']
+    },
+    'corridor-7': {
+      name: 'Chodba 7',
+      type: 'corridor',
+      // 2 wide, 5 long, straight up from central hub's blue door
+      gx: 40, gy: 32, cols: 2, rows: 5,
+      // open at the bottom (central hub's own blue door already marks it);
+      // open at the top too - the corridor continues further north (corridor-9/10/11/12/13/14)
+      // single door on the left side, 4th square (counting from the bottom), into the security room
+      open: [ {row:4, col:0, side:'bottom'}, {row:4, col:1, side:'bottom'},
+              {row:0, col:0, side:'top'},    {row:0, col:1, side:'top'} ],
+      doors: [ {row:1, col:0, side:'left'} ],
+      selectable: false
+    },
+    'corridor-blue-1': {
+      name: 'Chodba modrá 1',
+      type: 'corridor',
+      // pure trigger, no cells of its own - bundles the corridor from central hub's red
+      // door up through security, IT, and conference room's own connecting corridors
+      // (14 up + 4 left from the red door) into one standalone "security and command" reveal
+      gx: 41, gy: 23, cols: 0, rows: 0,
+      cells: [],
+      open: [],
+      doors: [],
+      selectable: true,
+      autoReveal: ['corridor-7', 'corridor-9', 'corridor-10', 'corridor-11']
+    },
+    'security-room': {
+      name: 'Security',
+      type: 'room',
+      gx: 37, gy: 32, cols: 3, rows: 3,
+      // door on the right wall, middle row - lines up with corridor-7's door
+      doors: [ {row:1, col:2, side:'right'} ],
+      selectable: true
+    },
+    'secret-security-room': {
+      name: 'S1',
+      type: 'room',
+      // one column further left, sharing security room's left wall (plain wall, no door)
+      gx: 36, gy: 32, cols: 1, rows: 3,
+      doors: [],
+      selectable: true
+    },
+    'corridor-12': {
+      name: 'Chodba modrá 2',
+      type: 'corridor',
+      // directors office's own vertical trunk, continuing down to the conference-room area
+      gx: 34, gy: 6, cols: 4, rows: 17,
+      cells: [[0,0],[0,1],[1,0],[1,1],[2,0],[2,1],[3,0],[3,1],[4,0],[4,1],[5,0],[5,1],[6,0],[6,1],[7,0],[7,1],
+        [8,0],[8,1],[8,2],[8,3],[9,0],[9,1],[9,2],[9,3],
+        [10,2],[10,3],[11,2],[11,3],[12,2],[12,3],[13,2],[13,3],[14,2],[14,3],[15,2],[15,3],[16,2],[16,3]],
+      open: [
+        {row:2, col:0, side:'left'}, {row:3, col:0, side:'left'},   // to corridor-14 (safe room branch)
+        {row:2, col:1, side:'right'}, {row:3, col:1, side:'right'}, // to corridor-13 (vault branch)
+        {row:16, col:2, side:'bottom'}, {row:16, col:3, side:'bottom'} // down into corridor-10
+      ],
+      // door into directors office, at the top (owned here so it shows as part of "Chodba modrá 2")
+      doors: [ {row:0, col:0, side:'top'}, {row:0, col:1, side:'top'} ],
+      selectable: true
+    },
+    'corridor-blue-3': {
+      name: 'Chodba modrá 3',
+      type: 'corridor',
+      // pure trigger, no cells of its own - bundles the vault and safe-room branches
+      // together into one standalone reveal, detached from those rooms
+      gx: 36, gy: 8, cols: 0, rows: 0,
+      cells: [],
+      open: [],
+      doors: [],
+      selectable: true,
+      autoReveal: ['corridor-13', 'corridor-14']
+    },
+    'corridor-13': {
+      name: 'Chodba 13',
+      type: 'corridor',
+      // directors office to vault
+      gx: 36, gy: 8, cols: 8, rows: 2,
+      open: [
+        {row:0, col:0, side:'left'}, {row:1, col:0, side:'left'},   // to corridor-12
+      ],
+      // door into vault - owned here so it shows as part of "Chodba modrá 3"
+      doors: [ {row:0, col:7, side:'right', color:'#ff9900'}, {row:1, col:7, side:'right', color:'#ff9900'} ],
+      selectable: false
+    },
+    'corridor-14': {
+      name: 'Chodba 14',
+      type: 'corridor',
+      // directors office to safe room
+      gx: 18, gy: 7, cols: 16, rows: 5,
+      cells: [[0,0],[0,1],[1,0],[1,1],[1,10],[1,11],[1,12],[1,13],[1,14],[1,15],
+        [2,0],[2,1],[2,10],[2,11],[2,12],[2,13],[2,14],[2,15],
+        [3,0],[3,1],[3,2],[3,3],[3,4],[3,5],[3,6],[3,7],[3,8],[3,9],[3,10],[3,11],
+        [4,0],[4,1],[4,2],[4,3],[4,4],[4,5],[4,6],[4,7],[4,8],[4,9],[4,10],[4,11]],
+      open: [
+        {row:1, col:15, side:'right'}, {row:2, col:15, side:'right'} // to corridor-12
+      ],
+      // door into safe room - owned here so it shows as part of "Chodba modrá 3"
+      doors: [ {row:0, col:0, side:'top'}, {row:0, col:1, side:'top'} ],
+      selectable: false
+    },
+    'corridor-11': {
+      name: 'Chodba 11',
+      type: 'corridor',
+      // the link between the IT-area corridor and the conference-room corridor
+      gx: 40, gy: 25, cols: 2, rows: 4,
+      open: [
+        {row:0, col:0, side:'top'}, {row:0, col:1, side:'top'},     // up into corridor-10
+        {row:3, col:0, side:'bottom'}, {row:3, col:1, side:'bottom'} // down into corridor-9
+      ],
+      doors: [],
+      selectable: false
+    },
+    'safe-room': {
+      name: 'Safe room',
+      type: 'room',
+      gx: 16, gy: 1, cols: 6, rows: 6,
+      // door owned by corridor-14 now so it shows even when this room isn't revealed
+      open: [ {row:5, col:2, side:'bottom'}, {row:5, col:3, side:'bottom'} ],
+      doors: [],
+      selectable: true
+    },
+    'S2': {
+      name: 'S2',
+      type: 'room',
+      // recolors 3 floor tiles in safe room orange: 2nd row from the top, starting at the
+      // 1st square from the left and extending 2 more squares further left
+      gx: 14, gy: 2, cols: 3, rows: 1,
+      fillColor: '#ff9900',
+      noLabel: true,
+      openSides: ['top','bottom','left','right'],
+      doors: [],
+      selectable: true
+    },
+    'directors-office': {
+      name: 'Directors office',
+      type: 'room',
+      gx: 32, gy: 1, cols: 6, rows: 5,
+      open: [ {row:4, col:2, side:'bottom'}, {row:4, col:3, side:'bottom'} ],
+      doors: [],
+      selectable: true
+    },
+    'vault': {
+      name: 'Vault',
+      type: 'room',
+      gx: 44, gy: 7, cols: 4, rows: 4,
+      // door owned by corridor-13 now so it shows even when this room isn't revealed
+      open: [ {row:1, col:0, side:'left'}, {row:2, col:0, side:'left'} ],
+      doors: [],
+      selectable: true
+    },
+    'zasedacka': {
+      name: 'Conference room',
+      type: 'room',
+      gx: 39, gy: 15, cols: 9, rows: 8,
+      // wall all along the bottom now, except a single door at the 3rd square from the left
+      // (owned by corridor-10 now so it shows even when this room isn't revealed)
+      open: [ {row:7, col:2, side:'bottom'} ],
+      doors: [],
+      selectable: true
+    },
+    'corridor-10': {
+      name: 'Chodba 10',
+      type: 'corridor',
+      // the short stretch leading up to conference room's door, plus the bit
+      // running further left/west along the same corridor band
+      gx: 36, gy: 23, cols: 6, rows: 2,
+      open: [
+        {row:0, col:0, side:'top'}, {row:0, col:1, side:'top'}, // continues up into corridor-12
+        {row:1, col:4, side:'bottom'}, {row:1, col:5, side:'bottom'} // continues down into corridor-11
+      ],
+      // conference room's door - owned here so it shows up as part of "Chodba modrá 1"
+      // even if the room itself isn't revealed
+      doors: [ {row:0, col:5, side:'top'} ],
+      selectable: false
+    },
+    'it-room': {
+      name: 'IT',
+      type: 'room',
+      // 3 wide, 4 tall (one extra row added on top)
+      gx: 42, gy: 28, cols: 3, rows: 4,
+      // single door, bottom-left, facing the corridor (owned by corridor-9 now so it
+      // shows even when IT itself isn't revealed); wall everywhere else
+      open: [ {row:3, col:0, side:'left'}, {row:3, col:2, side:'right'} ],
+      doors: [],
+      selectable: true
+    },
+    'corridor-9': {
+      name: 'Chodba 9',
+      type: 'corridor',
+      // short stub reaching up to the level of IT's door
+      gx: 40, gy: 29, cols: 2, rows: 3,
+      open: [
+        {row:0, col:0, side:'top'}, {row:0, col:1, side:'top'}, // continues up into corridor-11
+        {row:2, col:0, side:'bottom'}, {row:2, col:1, side:'bottom'} // continues down into corridor-7
+      ],
+      // IT's door - owned here so it shows up as part of "Chodba modrá 1" even if IT itself isn't revealed
+      doors: [ {row:2, col:1, side:'right'} ],
+      selectable: false
+    },
+    'srv-room': {
+      name: 'Srv room',
+      type: 'room',
+      gx: 45, gy: 29, cols: 3, rows: 3,
+      // single door, bottom-left, facing IT; wall everywhere else
+      doors: [ {row:2, col:0, side:'left'} ],
+      selectable: true
+    },
+    'corridor-yellow': {
+      // no name shown on the map itself (type stays 'corridor', which never draws a label);
+      // shows up in the DM dropdown as "Chodba žlutá"
+      name: 'Chodba žlutá 1',
+      type: 'corridor',
+      // from central hub's yellow door: 8 down, 6 right, 8 down, dead-ends at a wall
+      gx: 40, gy: 47, cols: 8, rows: 16,
+      cells: [[0,0],[0,1],[1,0],[1,1],[2,0],[2,1],[3,0],[3,1],[4,0],[4,1],[5,0],[5,1],
+        [6,0],[6,1],[6,2],[6,3],[6,4],[6,5],[6,6],[6,7],
+        [7,0],[7,1],[7,2],[7,3],[7,4],[7,5],[7,6],[7,7],
+        [8,6],[8,7],[9,6],[9,7],[10,6],[10,7],[11,6],[11,7],[12,6],[12,7],[13,6],[13,7],[14,6],[14,7],[15,6],[15,7]],
+      // open at the top only, matching central hub's yellow door (door drawn on the hub's own side)
+      open: [ {row:0, col:0, side:'top'}, {row:0, col:1, side:'top'} ],
+      doors: [],
+      selectable: true
+    },
+    'corridor-15': {
+      name: 'Chodba 15',
+      type: 'corridor',
+      // from the end of the yellow corridor: 4 right, then turns 6 down
+      gx: 46, gy: 61, cols: 6, rows: 8,
+      cells: [[0,0],[0,1],[0,2],[0,3],[0,4],[0,5],
+        [1,0],[1,1],[1,2],[1,3],[1,4],[1,5],
+        [2,4],[2,5],[3,4],[3,5],[4,4],[4,5],[5,4],[5,5],[6,4],[6,5],[7,4],[7,5]],
+      // door into chemical lab, only in the upper of the two rows at the end of the rightward part
+      open: [ {row:0, col:5, side:'right'} ],
+      doors: [],
+      selectable: false
+    },
+    'chemical-lab': {
+      name: 'Chemical lab',
+      type: 'room',
+      // top row lines up with the corridor's top row; 4x4, extending 3 more rows down
+      gx: 52, gy: 61, cols: 4, rows: 4,
+      doors: [ {row:0, col:0, side:'left'} ],
+      selectable: true
+    },
+    'corridor-16': {
+      name: 'Chodba 16',
+      type: 'corridor',
+      // from the end of the yellow corridor: 4 left, then turns 14 down
+      gx: 42, gy: 61, cols: 6, rows: 16,
+      cells: (function(){
+        const cells = [];
+        for(const c of [0,1,2,3,4,5]){ cells.push([0,c]); cells.push([1,c]); }
+        for(let r=2; r<16; r++){ cells.push([r,0]); cells.push([r,1]); }
+        return cells;
+      })(),
+      // door into biological lab, on the 4th of the 14 down squares
+      open: [ {row:5, col:0, side:'left'} ],
+      doors: [],
+      selectable: false
+    },
+    'biological-lab': {
+      name: 'Biological lab',
+      type: 'room',
+      // 5 wide, 8 tall; the corridor door lands on the room's 2nd row
+      gx: 37, gy: 65, cols: 5, rows: 8,
+      doors: [ {row:1, col:4, side:'right'} ],
+      selectable: true
+    },
+    'corridor-17': {
+      name: 'Chodba 17',
+      type: 'corridor',
+      // from the end of corridor-16: 8 right, then turns 6 up
+      gx: 42, gy: 69, cols: 10, rows: 8,
+      cells: [[0,8],[0,9],[1,8],[1,9],[2,8],[2,9],[3,8],[3,9],[4,8],[4,9],[5,8],[5,9],
+        [6,0],[6,1],[6,2],[6,3],[6,4],[6,5],[6,6],[6,7],[6,8],[6,9],
+        [7,0],[7,1],[7,2],[7,3],[7,4],[7,5],[7,6],[7,7],[7,8],[7,9]],
+      // door into genetic lab, at the 8th square, bottom row, of the rightward part;
+      // plus research archive's door sits directly above this same row;
+      // plus it continues straight down into corridor-yellow-2
+      open: [ {row:7, col:9, side:'right'}, {row:6, col:4, side:'top'}, {row:6, col:5, side:'top'},
+              {row:7, col:4, side:'bottom'}, {row:7, col:5, side:'bottom'} ],
+      doors: [],
+      selectable: false
+    },
+    'genetic-lab': {
+      name: 'Genetic lab',
+      type: 'room',
+      // 4x4; bottom row lines up with the corridor/door level, extending 3 rows up
+      gx: 52, gy: 73, cols: 4, rows: 4,
+      doors: [ {row:3, col:0, side:'left'} ],
+      selectable: true
+    },
+    'research-archive': {
+      name: 'Research archive',
+      type: 'room',
+      // fills the hole in the middle of the yellow/chemical/biological/genetic corridor loop
+      gx: 44, gy: 63, cols: 6, rows: 12,
+      // wide door, bottom row, centered, down into the corridor loop below
+      // (that corridor is genetic lab's own corridor-17, so no autoReveal here)
+      doors: [ {row:11, col:2, side:'bottom'}, {row:11, col:3, side:'bottom'} ],
+      selectable: true
+    },
+    'corridor-yellow-2': {
+      // shows up in the DM dropdown as "Chodba žlutá 2"; no label on the map itself
+      name: 'Chodba žlutá 2',
+      type: 'corridor',
+      // splits directly from the end of corridor-yellow (chodba žlutá 1) into two
+      // symmetric branches - 4 right + 8 down, and 4 left + 8 down
+      gx: 42, gy: 61, cols: 10, rows: 10,
+      cells: (function(){
+        const cells = [];
+        for(const r of [0,1]) for(let c=4; c<10; c++) cells.push([r,c]);  // 4 right
+        for(const r of [0,1]) for(let c=0; c<6; c++) cells.push([r,c]);   // 4 left
+        for(let r=0; r<10; r++) for(const c of [8,9]) cells.push([r,c]); // 8 down (right branch)
+        for(let r=0; r<10; r++) for(const c of [0,1]) cells.push([r,c]); // 8 down (left branch)
+        const seen = new Set(); const out = [];
+        for(const [r,c] of cells){ const k=r+'_'+c; if(!seen.has(k)){ seen.add(k); out.push([r,c]); } }
+        return out;
+      })(),
+      open: [],
+      doors: [],
+      selectable: true
+    },
+    'corridor-yellow-3': {
+      // shows up in the DM dropdown as "Chodba žlutá 3"; no label on the map itself
+      name: 'Chodba žlutá 3',
+      type: 'corridor',
+      // continues from the end of corridor-yellow-2's right branch: 6 down, 8 left, 4 up;
+      // and at positions 3-4 of that 8-left stretch, a branch splits off 4 more down
+      gx: 42, gy: 70, cols: 10, rows: 11,
+      cells: (function(){
+        const cells = [];
+        for(let r=0; r<7; r++) for(const c of [8,9]) cells.push([r,c]);   // 6 down
+        for(const r of [5,6]) for(let c=0; c<10; c++) cells.push([r,c]);  // 8 left
+        for(let r=1; r<7; r++) for(const c of [0,1]) cells.push([r,c]);  // 4 up
+        for(let r=5; r<11; r++) for(const c of [4,5]) cells.push([r,c]); // 4 down (positions 3-4)
+        const seen = new Set(); const out = [];
+        for(const [r,c] of cells){ const k=r+'_'+c; if(!seen.has(k)){ seen.add(k); out.push([r,c]); } }
+        return out;
+      })(),
+      open: [],
+      doors: [],
+      selectable: true
+    },
+    'corridor-yellow-4': {
+      // shows up in the DM dropdown as "Chodba žlutá 4"; no label on the map itself
+      name: 'Chodba žlutá 4',
+      type: 'corridor',
+      // continues from the bottom of corridor-yellow-3's branch, splitting two ways:
+      // straight 8 down, and 4 right + 4 down + 6 left (ending in a wide door) - that
+      // 6-left stretch crosses back UNDER the straight 8-down shaft (hatched cells)
+      gx: 44, gy: 79, cols: 8, rows: 10,
+      cells: (function(){
+        const cells = [];
+        for(let r=1; r<10; r++) for(const c of [2,3]) cells.push([r,c]); // 8 down
+        for(const r of [0,1]) for(let c=2; c<8; c++) cells.push([r,c]);  // 4 right
+        for(let r=0; r<6; r++) for(const c of [6,7]) cells.push([r,c]); // 4 down
+        for(const r of [4,5]) for(let c=0; c<8; c++) cells.push([r,c]); // 6 left
+        const seen = new Set(); const out = [];
+        for(const [r,c] of cells){ const k=r+'_'+c; if(!seen.has(k)){ seen.add(k); out.push([r,c]); } }
+        return out;
+      })(),
+      // the crossing: the 6-left branch passes directly under the straight 8-down shaft here
+      crossings: [[4,2],[4,3],[5,2],[5,3]],
+      // wide door at the end of the 6-left branch
+      doors: [ {row:4, col:0, side:'left'}, {row:5, col:0, side:'left'} ],
+      open: [],
+      selectable: true
+    },
+    'corridor-yellow-5': {
+      // shows up in the DM dropdown as "Chodba žlutá 5"; no label on the map itself
+      name: 'Chodba žlutá 5',
+      type: 'corridor',
+      // continues from the bottom of corridor-yellow-4's straight shaft, splitting two
+      // symmetric ways: 4 right + 4 down + 2 left (door on the left, at the down part's
+      // last row), and 4 left + 4 down + 2 right (door on the right, mirrored)
+      gx: 42, gy: 87, cols: 10, rows: 6,
+      cells: (function(){
+        const cells = [];
+        for(const r of [0,1]) for(let c=4; c<10; c++) cells.push([r,c]); // 4 right
+        for(let r=0; r<6; r++) for(const c of [8,9]) cells.push([r,c]); // 4 down
+        for(const r of [4,5]) for(let c=6; c<10; c++) cells.push([r,c]); // 2 left
+        for(const r of [0,1]) for(let c=0; c<6; c++) cells.push([r,c]); // 4 left
+        for(let r=0; r<6; r++) for(const c of [0,1]) cells.push([r,c]); // 4 down
+        for(const r of [4,5]) for(let c=0; c<4; c++) cells.push([r,c]); // 2 right
+        const seen = new Set(); const out = [];
+        for(const [r,c] of cells){ const k=r+'_'+c; if(!seen.has(k)){ seen.add(k); out.push([r,c]); } }
+        return out;
+      })(),
+      // side doors on the down-segments' last row: horizontal doors facing further down,
+      // left column on the right-hand branch, right column on the left-hand branch
+      doors: [ {row:5, col:8, side:'bottom'}, {row:5, col:1, side:'bottom'} ],
+      open: [],
+      selectable: true
+    },
+    'corridor-yellow-6': {
+      // shows up in the DM dropdown as "Chodba žlutá 6"; no label on the map itself
+      name: 'Chodba žlutá 6',
+      type: 'corridor',
+      // last piece: continues from the right end of corridor-yellow-5's right-hand
+      // branch: 2 left, then 8 down, ending in a wide door at the bottom
+      gx: 46, gy: 91, cols: 4, rows: 10,
+      cells: (function(){
+        const cells = [];
+        for(const r of [0,1]) for(let c=0; c<4; c++) cells.push([r,c]); // 2 left
+        for(let r=0; r<10; r++) for(const c of [0,1]) cells.push([r,c]); // 8 down
+        const seen = new Set(); const out = [];
+        for(const [r,c] of cells){ const k=r+'_'+c; if(!seen.has(k)){ seen.add(k); out.push([r,c]); } }
+        return out;
+      })(),
+      doors: [ {row:9, col:0, side:'bottom'}, {row:9, col:1, side:'bottom'} ],
+      open: [],
+      selectable: true
+    },
+    'sample-archive': {
+      name: 'Sample archive',
+      type: 'room',
+      // 6x6; bottom row lines up with the corridor's bottom row at the end of the left-going branch
+      gx: 38, gy: 79, cols: 6, rows: 6,
+      doors: [ {row:4, col:5, side:'right'}, {row:5, col:5, side:'right'} ],
+      selectable: true
+    },
+    'corridor-18': {
+      name: 'Chodba 18',
+      type: 'corridor',
+      // from the bottom of yellow corridor 2: 4 right, 4 down, then 2 left
+      gx: 46, gy: 87, cols: 6, rows: 6,
+      cells: (function(){
+        const cells = [];
+        for(const r of [0,1]) for(let c=0;c<6;c++) cells.push([r,c]); // 4 right
+        for(let r=0;r<6;r++){ cells.push([r,4]); cells.push([r,5]); } // 4 down
+        for(const r of [4,5]) for(let c=2;c<6;c++) cells.push([r,c]); // 2 left
+        const seen=new Set(); const out=[];
+        for(const [r,c] of cells){ const k=r+'_'+c; if(!seen.has(k)){seen.add(k); out.push([r,c]);} }
+        return out;
+      })(),
+      // single door, facing south, at the bottom of the down stretch (left of its 2 columns) -
+      // owned by medical lab now, so just open here
+      open: [ {row:5, col:4, side:'bottom'} ],
+      doors: [],
+      selectable: false
+    },
+    'medical-lab': {
+      name: 'Medical lab',
+      type: 'room',
+      // a 2x2 entry (its top-left cell sits right behind the door) plus a 6x6 room beside it
+      gx: 50, gy: 89, cols: 8, rows: 6,
+      cells: (function(){
+        const cells = [];
+        for(const r of [4,5]) for(const c of [0,1]) cells.push([r,c]); // 2x2 entry
+        for(let r=0;r<6;r++) for(let c=2;c<8;c++) cells.push([r,c]); // 6x6 main room
+        return cells;
+      })(),
+      doors: [ {row:4, col:0, side:'top'} ],
+      selectable: true
+    },
+    'corridor-19': {
+      name: 'Chodba 19',
+      type: 'corridor',
+      // mirror of corridor-18, from the same starting point: 4 left, 4 down, 2 right
+      gx: 42, gy: 87, cols: 6, rows: 6,
+      cells: (function(){
+        const cells = [];
+        for(const r of [0,1]) for(let c=0;c<6;c++) cells.push([r,c]); // 4 left
+        for(let r=0;r<6;r++){ cells.push([r,0]); cells.push([r,1]); } // 4 down
+        for(const r of [4,5]) for(let c=0;c<4;c++) cells.push([r,c]); // 2 right
+        const seen=new Set(); const out=[];
+        for(const [r,c] of cells){ const k=r+'_'+c; if(!seen.has(k)){seen.add(k); out.push([r,c]);} }
+        return out;
+      })(),
+      // single door, facing south, at the bottom of the down stretch (right of its 2 columns) -
+      // owned by physic lab now, so just open here
+      open: [ {row:5, col:1, side:'bottom'} ],
+      doors: [],
+      selectable: false
+    },
+    'physic-lab': {
+      name: 'Physic lab',
+      type: 'room',
+      // mirror of medical lab: a 2x2 entry (top-right cell behind the door) plus a 6x6 room beside it
+      gx: 36, gy: 89, cols: 8, rows: 6,
+      cells: (function(){
+        const cells = [];
+        for(const r of [4,5]) for(const c of [6,7]) cells.push([r,c]); // 2x2 entry
+        for(let r=0;r<6;r++) for(let c=0;c<6;c++) cells.push([r,c]); // 6x6 main room
+        return cells;
+      })(),
+      doors: [ {row:4, col:7, side:'top'} ],
+      selectable: true
+    },
+    'corridor-20': {
+      name: 'Chodba 20',
+      type: 'corridor',
+      // from the dead end of corridor-19 (physic lab's corridor): 2 right, then 8 down
+      gx: 44, gy: 91, cols: 4, rows: 10,
+      cells: (function(){
+        const cells = [];
+        for(const r of [0,1]) for(let c=0;c<4;c++) cells.push([r,c]); // 2 right
+        for(let r=0;r<10;r++){ cells.push([r,2]); cells.push([r,3]); } // 8 down
+        const seen=new Set(); const out=[];
+        for(const [r,c] of cells){ const k=r+'_'+c; if(!seen.has(k)){seen.add(k); out.push([r,c]);} }
+        return out;
+      })(),
+      // wide door, both cells, at the very bottom - owned by the anteroom now, so just open here
+      open: [ {row:9, col:2, side:'bottom'}, {row:9, col:3, side:'bottom'} ],
+      doors: [],
+      selectable: false
+    },
+    'bio-hazard-anteroom': {
+      name: 'Bio hazard anteroom',
+      type: 'room',
+      noLabel: true,
+      // small 2x2 landing behind the corridor's door
+      gx: 46, gy: 101, cols: 2, rows: 2,
+      // owns both doors: the entrance from the corridor, and its own way onward into the main room
+      doors: [ {row:0, col:0, side:'top'}, {row:0, col:1, side:'top'},
+               {row:1, col:0, side:'bottom'}, {row:1, col:1, side:'bottom'} ],
+      selectable: false
+    },
+    'bio-hazard-room': {
+      name: 'Bio hazard room',
+      type: 'room',
+      // 6x6; the anteroom's door lands on its top row, positions 3-4
+      gx: 44, gy: 103, cols: 6, rows: 6,
+      // door owned by the anteroom (always bundled with this room), so just open here
+      doors: [],
+      open: [ {row:0, col:2, side:'top'}, {row:0, col:3, side:'top'} ],
+      selectable: true,
+      autoReveal: ['bio-hazard-anteroom']
+    },
+    'corridor-blank-1': {
+      name: 'Chodba bezbarvá 1',
+      type: 'corridor',
+      // from central hub's bottom-left door: 3 down, then 18 left
+      gx: 14, gy: 47, cols: 20, rows: 3,
+      cells: (function(){
+        const cells = [];
+        for(let r=0; r<3; r++){ cells.push([r,18]); cells.push([r,19]); } // 3 down
+        for(const r of [1,2]) for(let c=0; c<20; c++) cells.push([r,c]); // 18 left
+        const seen=new Set(); const out=[];
+        for(const [r,c] of cells){ const k=r+'_'+c; if(!seen.has(k)){seen.add(k); out.push([r,c]);} }
+        return out;
+      })(),
+      // open at the top (central hub's own door already marks it)
+      open: [ {row:0, col:18, side:'top'}, {row:0, col:19, side:'top'} ],
+      doors: [],
+      selectable: true
+    },
+    'corridor-blank-2': {
+      name: 'Chodba bezbarvá 2',
+      type: 'corridor',
+      // continues from corridor-blank-1's leftmost corner: 30 down, wide door at the bottom;
+      // 2-wide doors down the left side at rows 3-4, 11-12, 19-20, 27-28; at row 15-16 on the
+      // right side a branch splits off: 3 right, 1 down, ending in its own wide door
+      gx: 14, gy: 48, cols: 5, rows: 32,
+      cells: (function(){
+        const cells = [];
+        for(let r=0; r<32; r++){ cells.push([r,0]); cells.push([r,1]); } // 30 down (+ shared corner)
+        for(const r of [14,15]) for(const c of [2,3,4]) cells.push([r,c]); // 3 right
+        for(const c of [3,4]) cells.push([16,c]); // 1 down
+        return cells;
+      })(),
+      open: [],
+      doors: [
+        // left-side doors, 2 wide each (rows counted from the top of this corridor, shifted
+        // down 2 to clear the shared corner with corridor-blank-1)
+        {row:2, col:0, side:'left'}, {row:3, col:0, side:'left'},   // positions 1-2
+        {row:10, col:0, side:'left'}, {row:11, col:0, side:'left'}, // positions 9-10
+        {row:18, col:0, side:'left'}, {row:19, col:0, side:'left'}, // positions 17-18
+        {row:26, col:0, side:'left'}, {row:27, col:0, side:'left'}, // positions 25-26
+        // branch's ending door (after 3 right, 1 down)
+        {row:16, col:3, side:'bottom'}, {row:16, col:4, side:'bottom'},
+        // main shaft's ending door, straight down at the bottom
+        {row:31, col:0, side:'bottom'}, {row:31, col:1, side:'bottom'}
+      ],
+      selectable: true
+    },
+    'laundry-room': {
+      name: 'Laundry room',
+      type: 'room',
+      // 6 wide, 4 tall; corridor-blank-2's door lands on its top-right corner
+      gx: 10, gy: 80, cols: 6, rows: 4,
+      open: [ {row:0, col:4, side:'top'}, {row:0, col:5, side:'top'} ], // matches corridor-blank-2's door
+      doors: [],
+      selectable: true
+    },
+    'canteen': {
+      name: 'Canteen',
+      type: 'room',
+      // 15 wide, 14 tall; corridor-blank-2's last (previously unused) outlet - the branch's
+      // ending door - lands on this room's top-left corner
+      gx: 17, gy: 65, cols: 15, rows: 14,
+      open: [ {row:0, col:0, side:'top'}, {row:0, col:1, side:'top'}, // matches corridor-blank-2's door
+              {row:0, col:10, side:'top'} ], // matches kitchen's door
+      doors: [],
+      selectable: true
+    },
+    'kitchen': {
+      name: 'Kitchen',
+      type: 'room',
+      // 6x6, attached to canteen's top wall at positions 6-11; door in its bottom-right
+      // corner, lining up with canteen
+      gx: 22, gy: 59, cols: 6, rows: 6,
+      open: [ {row:0, col:0, side:'left'} ], // matches food storage's door
+      doors: [ {row:5, col:5, side:'bottom'} ],
+      selectable: true
+    },
+    'food-storage': {
+      name: 'Food storage',
+      type: 'room',
+      // 5 wide, 7 tall, attached on kitchen's left; only its last two rows reach kitchen's
+      // top-left corner, with a door on the second (lower) of those two rows
+      gx: 17, gy: 54, cols: 5, rows: 7,
+      doors: [ {row:5, col:4, side:'right'} ],
+      selectable: true
+    },
+    'corridor-red-1': {
+      name: 'Chodba červená 1',
+      type: 'corridor',
+      // from central hub's red door: 14 right, then at position 9-10 it forks:
+      // 2 up (ending in a door), and 4 down + 2 right + 2 down (ending in a door)
+      gx: 42, gy: 39, cols: 14, rows: 10,
+      cells: (function(){
+        const cells = [];
+        for(const r of [2,3]) for(let c=0; c<14; c++) cells.push([r,c]); // 14 right
+        for(const r of [0,1]) for(const c of [8,9]) cells.push([r,c]);  // 2 up
+        for(let r=2; r<8; r++) for(const c of [8,9]) cells.push([r,c]); // 4 down
+        for(const r of [6,7]) for(let c=8; c<12; c++) cells.push([r,c]); // 2 right
+        for(let r=6; r<10; r++) for(const c of [10,11]) cells.push([r,c]); // 2 down
+        const seen=new Set(); const out=[];
+        for(const [r,c] of cells){ const k=r+'_'+c; if(!seen.has(k)){seen.add(k); out.push([r,c]);} }
+        return out;
+      })(),
+      // open where it meets central hub's own red door (no double marker)
+      open: [ {row:2, col:0, side:'left'}, {row:3, col:0, side:'left'} ],
+      // wide-ish ending doors on both branches
+      doors: [ {row:0, col:8, side:'top'}, {row:0, col:9, side:'top'},
+               {row:9, col:10, side:'bottom'}, {row:9, col:11, side:'bottom'} ],
+      selectable: true
+    },
+    'workshop-room': {
+      name: 'Workshop room',
+      type: 'room',
+      // 7x6, attached above corridor-red-1's upper branch door; the door lands in
+      // this room's bottom-right corner
+      gx: 45, gy: 33, cols: 7, rows: 6,
+      open: [ {row:5, col:5, side:'bottom'}, {row:5, col:6, side:'bottom'} ], // matches corridor-red-1's door
+      doors: [],
+      selectable: true
+    },
+    'spare-parts-storage': {
+      name: 'Spare parts storage',
+      type: 'room',
+      // 6x6, right below corridor-red-1's lower branch door, which lands on
+      // positions 3-4 of this room's top row
+      gx: 50, gy: 49, cols: 6, rows: 6,
+      open: [ {row:0, col:2, side:'top'}, {row:0, col:3, side:'top'} ], // matches corridor-red-1's door
+      doors: [],
+      selectable: true
+    },
+    'corridor-red-2': {
+      name: 'Chodba červená 2',
+      type: 'corridor',
+      // continues from the right end of corridor-red-1: 2 up, then 6 right, where it
+      // splits: 9 up (ending in a door), and 4 down + 2 right (open end for now)
+      gx: 54, gy: 30, cols: 10, rows: 15,
+      cells: (function(){
+        const cells = [];
+        for(const r of [9,10,11,12]) for(const c of [0,1]) cells.push([r,c]); // 2 up
+        for(const r of [9,10]) for(let c=0; c<8; c++) cells.push([r,c]);      // 6 right
+        for(let r=0; r<11; r++) for(const c of [6,7]) cells.push([r,c]);     // 9 up
+        for(let r=9; r<15; r++) for(const c of [6,7]) cells.push([r,c]);     // 4 down
+        for(const r of [13,14]) for(let c=6; c<10; c++) cells.push([r,c]);   // 2 right
+        const seen=new Set(); const out=[];
+        for(const [r,c] of cells){ const k=r+'_'+c; if(!seen.has(k)){seen.add(k); out.push([r,c]);} }
+        return out;
+      })(),
+      // (the shared corner with corridor-red-1 is already part of both corridors' own
+      // cells, so no extra wall/open marker is needed there)
+      open: [],
+      // door at the top of the 9-up branch; the 4-down+2-right branch stays open-ended for now
+      doors: [ {row:0, col:6, side:'top'}, {row:0, col:7, side:'top'} ],
+      selectable: true
+    },
+    'system-control-room': {
+      name: 'System control room',
+      type: 'room',
+      // 14x10; corridor-red-2's door lands on positions 5-6 (from the left) of the bottom wall
+      gx: 56, gy: 20, cols: 14, rows: 10,
+      open: [ {row:9, col:4, side:'bottom'}, {row:9, col:5, side:'bottom'} ], // matches corridor-red-2's door
+      doors: [
+        {row:8, col:0, side:'left'}, {row:9, col:0, side:'left'},   // left wall, bottom corner, 2 wide
+        {row:4, col:13, side:'right'}, {row:5, col:13, side:'right'} // right wall, positions 5-6 from the bottom
+      ],
+      selectable: true
+    },
+    'corridor-waste-disposal': {
+      name: 'Chodba - waste disposal',
+      type: 'corridor',
+      // from system control room's left-bottom-corner door: 4 left, 11 up, 2 right
+      gx: 51, gy: 17, cols: 5, rows: 13,
+      cells: (function(){
+        const cells = [];
+        for(const r of [11,12]) for(const c of [1,2,3,4]) cells.push([r,c]); // 4 left
+        for(let r=0; r<13; r++) for(const c of [1,2]) cells.push([r,c]);     // 11 up
+        for(const r of [0,1]) for(const c of [1,2,3,4]) cells.push([r,c]);   // 2 right
+        const seen=new Set(); const out=[];
+        for(const [r,c] of cells){ const k=r+'_'+c; if(!seen.has(k)){seen.add(k); out.push([r,c]);} }
+        return out;
+      })(),
+      // open at both ends - system control room and waste disposal each own their own door
+      open: [ {row:11, col:4, side:'right'}, {row:12, col:4, side:'right'},
+              {row:0, col:4, side:'right'}, {row:1, col:4, side:'right'} ],
+      doors: [],
+      selectable: false
+    },
+    'waste-disposal': {
+      name: 'Waste disposal',
+      type: 'room',
+      // 5x5; corridor-waste-disposal's door lands on the very bottom of the left wall
+      gx: 56, gy: 14, cols: 5, rows: 5,
+      doors: [ {row:3, col:0, side:'left'}, {row:4, col:0, side:'left'} ],
+      selectable: true,
+      autoReveal: ['corridor-waste-disposal']
+    },
+    'corridor-maintenance': {
+      name: 'Chodba - maintenance',
+      type: 'corridor',
+      // from system control room's right door: 4 right, then 2 up
+      gx: 70, gy: 22, cols: 4, rows: 4,
+      cells: (function(){
+        const cells = [];
+        for(const r of [2,3]) for(const c of [0,1,2,3]) cells.push([r,c]); // 4 right
+        for(let r=0; r<4; r++) for(const c of [2,3]) cells.push([r,c]);   // 2 up
+        const seen=new Set(); const out=[];
+        for(const [r,c] of cells){ const k=r+'_'+c; if(!seen.has(k)){seen.add(k); out.push([r,c]);} }
+        return out;
+      })(),
+      // open at both ends - system control room and maintenance room each own their own door
+      open: [ {row:2, col:0, side:'left'}, {row:3, col:0, side:'left'},
+              {row:0, col:2, side:'top'}, {row:0, col:3, side:'top'} ],
+      doors: [],
+      selectable: false
+    },
+    'maintenance-room': {
+      name: 'Maintenance room',
+      type: 'room',
+      // 5x5; corridor-maintenance's door lands on the corner of the bottom wall, 2 wide
+      gx: 72, gy: 17, cols: 5, rows: 5,
+      doors: [ {row:4, col:0, side:'bottom'}, {row:4, col:1, side:'bottom'} ],
+      selectable: true,
+      autoReveal: ['corridor-maintenance']
+    },
+    'corridor-red-3': {
+      name: 'Chodba červená 3',
+      type: 'corridor',
+      // continues from the open end of corridor-red-2's branch: 4 down, 4 right to a
+      // junction, then splits: 4 more right (ending in a door) and 12 down (ending in a door)
+      gx: 62, gy: 43, cols: 10, rows: 18,
+      cells: (function(){
+        const cells = [];
+        for(let r=0; r<6; r++) for(const c of [0,1]) cells.push([r,c]);   // 4 down
+        for(const r of [4,5]) for(let c=0; c<6; c++) cells.push([r,c]);   // 4 right (to the junction)
+        for(const r of [4,5]) for(let c=4; c<10; c++) cells.push([r,c]);  // 4 right (branch)
+        for(let r=4; r<18; r++) for(const c of [4,5]) cells.push([r,c]);  // 12 down (branch)
+        const seen=new Set(); const out=[];
+        for(const [r,c] of cells){ const k=r+'_'+c; if(!seen.has(k)){seen.add(k); out.push([r,c]);} }
+        return out;
+      })(),
+      open: [],
+      doors: [
+        {row:4, col:9, side:'right'}, {row:5, col:9, side:'right'},   // right branch ending
+        {row:17, col:4, side:'bottom'}, {row:17, col:5, side:'bottom'} // down branch ending
+      ],
+      selectable: true
+    },
+    'energy-room': {
+      name: 'Energy room',
+      type: 'room',
+      // 8x8; corridor-red-3's right-branch door lands exactly in the middle of the left wall
+      gx: 72, gy: 44, cols: 8, rows: 8,
+      open: [ {row:3, col:0, side:'left'}, {row:4, col:0, side:'left'} ], // matches the corridor's door
+      doors: [],
+      selectable: true
+    },
+    'blast-field-generator-room': {
+      name: 'Blast field generator room',
+      type: 'room',
+      // 8x8; corridor-red-3's down-branch door lands exactly in the middle of the top wall
+      gx: 63, gy: 61, cols: 8, rows: 8,
+      open: [ {row:0, col:3, side:'top'}, {row:0, col:4, side:'top'} ], // matches the corridor's door
+      doors: [],
+      selectable: true
+    }
+  };
+
+  // generate the 56 numbered quarters (kajuty, each 3x2) and their 4 connecting corridors
+  // (each 2 wide, 22 long) - 4 blocks of 14 rooms (7 top + 7 bottom of each corridor),
+  // each block one door-pair lower than the last along corridor-blank-2's left side
+  (function(){
+    const CORR_GX = -8;   // corridor's leftmost column (22 wide, rightmost touches the main shaft at col 13)
+    const ROOM_GX0 = -8;  // first (leftmost) room's leftmost column (rooms shifted 1 left; door sits at their leftmost cell)
+    for(let b=0; b<4; b++){
+      const corridorRow0 = 50 + b*8;
+      const corridorId = 'corridor-quarters-' + (b+1);
+      const doors = [];
+      for(let c=0;c<7;c++){
+        const localCol = (ROOM_GX0 + c*3) - CORR_GX; // leftmost column of room c, relative to the corridor
+        doors.push({row:0, col:localCol, side:'top'});
+        doors.push({row:1, col:localCol, side:'bottom'});
+      }
+      ROOMS[corridorId] = {
+        name: 'Chodba ubikace ' + (b+1),
+        type: 'corridor',
+        gx: CORR_GX, gy: corridorRow0, cols: 22, rows: 2,
+        open: [ {row:0, col:21, side:'right'}, {row:1, col:21, side:'right'} ],
+        doors: doors,
+        selectable: false
+      };
+      for(let c=0;c<7;c++){
+        const topNum = 1 + b*14 + c;
+        const botNum = 8 + b*14 + c;
+        const roomGx = ROOM_GX0 + c*3;
+        ROOMS['quarters-'+topNum] = {
+          name: String(topNum),
+          type: 'room',
+          gx: roomGx, gy: corridorRow0-2, cols:3, rows:2,
+          open: [ {row:1, col:0, side:'bottom'} ], // matches the corridor's own door
+          doors: [],
+          selectable: false
+        };
+        ROOMS['quarters-'+botNum] = {
+          name: String(botNum),
+          type: 'room',
+          gx: roomGx, gy: corridorRow0+2, cols:3, rows:2,
+          open: [ {row:0, col:0, side:'top'} ], // matches the corridor's own door
+          doors: [],
+          selectable: false
+        };
+      }
+    }
+    // bundle all 56 quarters + their 4 connecting corridors under one single reveal
+    const allQuartersIds = [];
+    for(let n=1;n<=56;n++) allQuartersIds.push('quarters-'+n);
+    for(let b=1;b<=4;b++) allQuartersIds.push('corridor-quarters-'+b);
+    ROOMS['ubications'] = {
+      name: 'Ubications',
+      type: 'corridor', // pure trigger, no cells of its own, no label drawn on the map
+      gx: -8, gy: 50, cols: 0, rows: 0,
+      cells: [], open: [], doors: [],
+      selectable: true,
+      autoReveal: allQuartersIds
+    };
+  })();
+
+  const NS = 'http://www.w3.org/2000/svg';
+  function el(tag, attrs){
+    const e = document.createElementNS(NS, tag);
+    for(const k in attrs) e.setAttribute(k, attrs[k]);
+    return e;
+  }
+
+  function buildRoomGroup(room, drawnFloor, globalCorridorOcc){
+    const cells = room.cells || rectCells(room.rows, room.cols);
+    const occ = new Set(cells.map(([r,c]) => r+'_'+c));
+    // corridors merge seamlessly with any other revealed corridor cell that touches them,
+    // even if that neighboring cell technically belongs to a different corridor entry -
+    // unless that corridor is flagged soloWalls (it should always draw its own walls,
+    // e.g. two separate corridors that happen to run side by side)
+    const isOccupied = (r,c) => {
+      if(occ.has(r+'_'+c)) return true;
+      if(room.type === 'corridor' && !room.soloWalls && globalCorridorOcc){
+        return globalCorridorOcc.has((room.gx+c)+':'+(room.gy+r));
+      }
+      return false;
+    };
+    const g = el('g', {transform:`translate(${room.gx*CELL},${room.gy*CELL})`});
+
+    const fill = room.fillColor || (room.type === 'corridor' ? 'var(--corridor-fill)' : 'var(--room-fill)');
+    const crossingSet = new Set((room.crossings||[]).map(([r,c]) => r+'_'+c));
+    for(const [r,c] of cells){
+      // dedupe: two corridor pieces sometimes deliberately share a corner cell so they
+      // line up seamlessly - only paint the floor for that cell once, so opacity never stacks.
+      // a room with a custom fillColor is a deliberate overlay/marker (e.g. a recolored
+      // panel) and always draws on top, regardless of what already painted that cell.
+      const globalKey = (room.gx+c)+':'+(room.gy+r);
+      if(!room.fillColor && drawnFloor.has(globalKey)) continue;
+      drawnFloor.add(globalKey);
+      g.appendChild(el('rect', {x:c*CELL,y:r*CELL,width:CELL,height:CELL, fill, opacity: room.fillColor ? 0.85 : 0.55}));
+      // a corridor that crosses over/under another one at a different level - hatch it
+      // so it reads as a bridge/crossing rather than a real junction
+      if(crossingSet.has(r+'_'+c)){
+        g.appendChild(el('rect', {x:c*CELL+1,y:r*CELL+1,width:CELL-2,height:CELL-2, fill:'none', stroke:'var(--room-stroke)', 'stroke-width':1, 'stroke-dasharray':'3,2'}));
+        g.appendChild(el('line', {x1:c*CELL+3,y1:r*CELL+3,x2:(c+1)*CELL-3,y2:(r+1)*CELL-3, stroke:'var(--room-stroke)','stroke-width':1.4}));
+        g.appendChild(el('line', {x1:(c+1)*CELL-3,y1:r*CELL+3,x2:c*CELL+3,y2:(r+1)*CELL-3, stroke:'var(--room-stroke)','stroke-width':1.4}));
+      }
+    }
+    // subtle inner grid lines between occupied neighbor cells
+    for(const [r,c] of cells){
+      if(isOccupied(r,c+1)) g.appendChild(el('line',{x1:(c+1)*CELL,y1:r*CELL,x2:(c+1)*CELL,y2:(r+1)*CELL,stroke:'#00000022','stroke-width':1}));
+      if(isOccupied(r+1,c)) g.appendChild(el('line',{x1:c*CELL,y1:(r+1)*CELL,x2:(c+1)*CELL,y2:(r+1)*CELL,stroke:'#00000022','stroke-width':1}));
+    }
+
+    const doorAt = (row,col,side) => (room.doors||[]).find(d => d.row===row && d.col===col && d.side===side);
+    const isOpenCell = (row,col,side) => (room.open||[]).some(d => d.row===row && d.col===col && d.side===side);
+    const isOpenSide = (side) => (room.openSides||[]).includes(side);
+
+    for(const [r,c] of cells){
+      const sides = [
+        ['top',    r-1, c,   [c*CELL, r*CELL, (c+1)*CELL, r*CELL],         r===0],
+        ['bottom', r+1, c,   [c*CELL, (r+1)*CELL, (c+1)*CELL, (r+1)*CELL], r===room.rows-1],
+        ['left',   r,   c-1, [c*CELL, r*CELL, c*CELL, (r+1)*CELL],         c===0],
+        ['right',  r,   c+1, [(c+1)*CELL, r*CELL, (c+1)*CELL, (r+1)*CELL], c===room.cols-1],
+      ];
+      for(const [side, nr, nc, coords, atOuterEdge] of sides){
+        const door = doorAt(r,c,side);
+        const [x1,y1,x2,y2] = coords;
+        if(door){
+          // an explicit door always renders, even between two corridor pieces that
+          // would otherwise merge seamlessly (occupancy alone never suppresses a real door).
+          // doors flagged "gap" get a small inset on both ends so they never visually
+          // merge with a neighboring door segment into what looks like one wide door
+          let dx1=x1, dy1=y1, dx2=x2, dy2=y2;
+          if(door.gap){
+            const inset = 4;
+            if(y1 === y2){ dx1 += inset; dx2 -= inset; } // horizontal door
+            else { dy1 += inset; dy2 -= inset; }          // vertical door
+          }
+          g.appendChild(el('line', {x1:dx1, y1:dy1, x2:dx2, y2:dy2, stroke:door.color || 'var(--door)', 'stroke-width':4,'stroke-linecap':'round'}));
+          continue;
+        }
+        if(isOccupied(nr, nc)) continue; // interior edge, not a boundary
+        if(atOuterEdge && isOpenSide(side)) continue;
+        if(isOpenCell(r,c,side)) continue;
+        g.appendChild(el('line', {x1,y1,x2,y2, stroke:'var(--room-stroke)','stroke-width':3,'stroke-linecap':'square'}));
+      }
+    }
+
+    if(room.type !== 'corridor' && !room.noLabel){
+      const cr = cells.reduce((s,[r,c])=>s+r,0)/cells.length + 0.5;
+      const cc = cells.reduce((s,[r,c])=>s+c,0)/cells.length + 0.5;
+      const label = el('text', {x:cc*CELL, y:cr*CELL, 'text-anchor':'middle','dominant-baseline':'middle',
+        'font-size':13, fill:'#1a1206', 'font-weight':'600', 'font-family':'inherit',
+        style:'user-select:none;pointer-events:none;'});
+      label.textContent = room.name;
+      g.appendChild(label);
+    }
+
+    return g;
+  }
+
+  function rectCells(rows, cols){
+    const cells = [];
+    for(let r=0;r<rows;r++) for(let c=0;c<cols;c++) cells.push([r,c]);
+    return cells;
+  }
+
+  // ---------- shared canvas sized to the whole (known) station layout ----------
+  function computeBounds(){
+    let minX=0,minY=0,maxX=0,maxY=0;
+    for(const rid in ROOMS){
+      const r = ROOMS[rid];
+      minX = Math.min(minX, r.gx); minY = Math.min(minY, r.gy);
+      maxX = Math.max(maxX, r.gx+r.cols); maxY = Math.max(maxY, r.gy+r.rows);
+    }
+    return {minX,minY,maxX,maxY};
+  }
+
+  let revealed = new Set();
+  const canvas = document.getElementById('mapCanvas');
+  const emptyHint = document.getElementById('emptyHint');
+
+  // ---------- runes overlay ----------
+  const RUNES = [
+    { num:1,  gx:18, gy:34, room:'medical-clinic' },
+    { num:2,  gx:23, gy:16, room:'power-distribution-room' },
+    { num:3,  gx:29, gy:42, room:'wcm' },
+    { num:4,  gx:1,  gy:56, room:'quarters-18' },
+    { num:5,  gx:17, gy:78, room:'canteen' }, // moved all the way to the bottom of the room
+    { num:6,  gx:37, gy:32, room:'security-room' }, // ostraha
+    { num:7,  gx:39, gy:15, room:'zasedacka' }, // conference room
+    { num:8,  gx:39, gy:8,  room:'corridor-13' }, // corridor before the vault, position 5 from the vault, top wall
+    { num:9,  gx:18, gy:11, room:'corridor-14' }, // swapped with 10: now the corridor before safe room's door
+    { num:10, gx:21, gy:6,  room:'safe-room' },   // swapped with 9: now inside safe room, opposite corner
+    { num:11, gx:40, gy:54, room:'corridor-yellow' }, // 8 cells down behind the yellow door, in the corner
+    { num:12, gx:52, gy:73, room:'genetic-lab' },
+    { num:13, gx:38, gy:79, room:'sample-archive' },
+    { num:14, gx:45, gy:87, room:'corridor-18' }, // moved 1 cell left; corridor between physic lab and medical lab
+    { num:15, gx:36, gy:89, room:'physic-lab' },
+    { num:16, gx:56, gy:20, room:'system-control-room' }, // swapped with 17: now in system control room
+    { num:17, gx:56, gy:14, room:'waste-disposal' },      // swapped with 16: now in waste disposal
+    { num:18, gx:63, gy:61, room:'blast-field-generator-room' },
+    { num:19, gx:72, gy:44, room:'energy-room' },
+  ];
+  let activeRunes = new Set();
+
+  // ---------- GM / player mode ----------
+  // Open with "?gm" in the URL on the GM's own device (laptop) to get full controls.
+  // Open the plain URL (no "?gm") on the player-facing tablet: bare map, no controls,
+  // and it updates itself in real time as the GM reveals things - no taps needed there.
+  const urlParams = new URLSearchParams(location.search);
+  const isGM = urlParams.has('gm');
+  document.body.classList.toggle('player-mode', !isGM);
+
+  // ---------- Firebase (real-time GM <-> player sync) ----------
+  // Reuses an existing Firebase project; Firestore security rules for this project
+  // are already open (allow read, write: if true), so no auth step is needed here.
+  const firebaseConfig = {
+    apiKey: "AIzaSyB9LZu9ExDcuzpdrD0tjLoiHFI6amu2cik",
+    authDomain: "test-8c6fe.firebaseapp.com",
+    projectId: "test-8c6fe",
+    storageBucket: "test-8c6fe.firebasestorage.app",
+    messagingSenderId: "419426633105",
+    appId: "1:419426633105:web:91d04d4af75d7e17510630"
+  };
+  let fbDocRef = null;
+  let fbReady = false;
+  let suppressNextRemoteApply = false; // avoids a GM's own write bouncing back and re-rendering redundantly
+  const syncBadge = document.getElementById('syncBadge');
+  const syncBadgeText = document.getElementById('syncBadgeText');
+  function setSyncBadge(state, label){
+    syncBadge.classList.remove('live','err');
+    if(state) syncBadge.classList.add(state);
+    syncBadgeText.textContent = label;
+  }
+  try{
+    if(typeof firebase !== 'undefined'){
+      firebase.initializeApp(firebaseConfig);
+      const db = firebase.firestore();
+      fbDocRef = db.collection('orionmap').doc('shared-state');
+      fbReady = true;
+    } else {
+      setSyncBadge('err', 'bez sítě');
+    }
+  }catch(e){
+    fbReady = false;
+    setSyncBadge('err', 'bez sítě');
+  }
+
+  function applyRemoteState(data){
+    revealed = new Set(Array.isArray(data.revealed) ? data.revealed : []);
+    activeRunes = new Set(Array.isArray(data.activeRunes) ? data.activeRunes : []);
+    render(); renderNav();
+    // keep localStorage as an offline fallback mirror of whatever we last saw
+    if(localStorageAvailable){
+      try{ localStorage.setItem('orion-revealed-rooms', JSON.stringify(Array.from(revealed))); }catch(e){}
+      try{ localStorage.setItem('orion-active-runes', JSON.stringify(Array.from(activeRunes))); }catch(e){}
+    }
+  }
+
+  function pushStateToFirestore(){
+    if(!isGM || !fbReady || !fbDocRef) return;
+    suppressNextRemoteApply = true;
+    fbDocRef.set({
+      revealed: Array.from(revealed),
+      activeRunes: Array.from(activeRunes),
+      updatedAt: Date.now()
+    }, {merge:true}).then(()=>{
+      setSyncBadge('live', 'synchronizováno');
+    }).catch((e)=>{
+      setSyncBadge('err', 'chyba synchronizace');
+    });
+  }
+
+  function initFirestoreSync(){
+    if(!fbReady || !fbDocRef) return;
+    setSyncBadge(null, 'připojování…');
+    fbDocRef.onSnapshot((doc)=>{
+      if(doc.exists){
+        const data = doc.data() || {};
+        if(suppressNextRemoteApply){
+          // this is the echo of our own write coming back - state already matches, just
+          // update the badge, no need to re-render
+          suppressNextRemoteApply = false;
+          setSyncBadge('live', 'synchronizováno');
+          return;
+        }
+        applyRemoteState(data);
+        setSyncBadge('live', 'synchronizováno');
+      } else if(isGM){
+        // nothing shared yet - seed it from whatever the GM currently has (e.g. local state)
+        pushStateToFirestore();
+      } else {
+        setSyncBadge(null, 'čeká na GM');
+      }
+    }, (err)=>{
+      setSyncBadge('err', 'chyba synchronizace');
+    });
+  }
+
+  function render(){
+    canvas.innerHTML = '';
+    if(revealed.size === 0 && activeRunes.size === 0){
+      emptyHint.style.display = '';
+      return;
+    }
+    emptyHint.style.display = 'none';
+    const b = computeBounds();
+    const w = (b.maxX-b.minX)*CELL, h = (b.maxY-b.minY)*CELL;
+    const svg = el('svg', {width:w, height:h, viewBox:`0 0 ${w} ${h}`, xmlns:NS});
+    const drawnFloor = new Set();
+
+    // gather every occupied cell (in the shifted/local coordinate space) across all
+    // revealed corridors first, so corridor pieces that share or touch a corner never
+    // draw a stray wall against each other
+    const globalCorridorOcc = new Set();
+    for(const rid in ROOMS){
+      if(!revealed.has(rid) || ROOMS[rid].type !== 'corridor') continue;
+      const r = ROOMS[rid];
+      const gx = r.gx - b.minX, gy = r.gy - b.minY;
+      const cells = r.cells || rectCells(r.rows, r.cols);
+      for(const [cr,cc] of cells) globalCorridorOcc.add((gx+cc)+':'+(gy+cr));
+    }
+
+    for(const rid in ROOMS){
+      if(!revealed.has(rid)) continue;
+      const room = Object.assign({}, ROOMS[rid], {gx:ROOMS[rid].gx-b.minX, gy:ROOMS[rid].gy-b.minY});
+      svg.appendChild(buildRoomGroup(room, drawnFloor, globalCorridorOcc));
+    }
+
+    // rune markers - drawn last, always on top, independent of room reveal state
+    for(const rune of RUNES){
+      if(!activeRunes.has(rune.num) || rune.gx === undefined) continue;
+      const x = (rune.gx - b.minX) * CELL, y = (rune.gy - b.minY) * CELL;
+      const g = el('g', {});
+      g.appendChild(el('rect', {x, y, width:CELL, height:CELL, fill:'#a855f7', opacity:0.9, stroke:'#05070a', 'stroke-width':1.5}));
+      const t = el('text', {x:x+CELL/2, y:y+CELL/2, 'text-anchor':'middle','dominant-baseline':'middle',
+        'font-size':15, fill:'#fff', 'font-weight':'700', 'font-family':'inherit',
+        style:'user-select:none;pointer-events:none;'});
+      t.textContent = rune.num;
+      g.appendChild(t);
+      svg.appendChild(g);
+    }
+
+    canvas.appendChild(svg);
+  }
+
+  function revealRoom(rid){
+    revealed.add(rid);
+    (ROOMS[rid].autoReveal||[]).forEach(r => revealed.add(r));
+  }
+  function hideRoom(rid){
+    revealed.delete(rid);
+    (ROOMS[rid].autoReveal||[]).forEach(r => revealed.delete(r));
+  }
+  function toggleRoom(rid){
+    if(revealed.has(rid)){ hideRoom(rid); return false; }
+    revealRoom(rid); return true;
+  }
+
+  // ---------- custom confirm dialog ----------
+  // native confirm()/alert() are unreliable in some embedded mobile viewers (they can be
+  // blocked or silently no-op), so use our own in-page dialog instead
+  function customConfirm(message, onYes){
+    const overlay = document.getElementById('confirmOverlay');
+    document.getElementById('confirmText').textContent = message;
+    overlay.style.display = 'flex';
+    const yesBtn = document.getElementById('confirmYesBtn');
+    const noBtn = document.getElementById('confirmNoBtn');
+    function cleanup(){
+      overlay.style.display = 'none';
+      yesBtn.removeEventListener('click', onYesClick);
+      noBtn.removeEventListener('click', onNoClick);
+    }
+    function onYesClick(){ cleanup(); onYes(); }
+    function onNoClick(){ cleanup(); }
+    yesBtn.addEventListener('click', onYesClick);
+    noBtn.addEventListener('click', onNoClick);
+  }
+
+  // window.storage only exists inside claude.ai's own artifact renderer. When this file
+  // is opened directly (e.g. a downloaded file viewer on mobile, or any other browser)
+  // it's missing entirely - fall back to localStorage in that case, which persists on
+  // the device itself, tied to this file/origin, and survives closing the tab/app.
+  const storageAvailable = typeof window.storage !== 'undefined'
+    && typeof window.storage.get === 'function' && typeof window.storage.set === 'function';
+  let localStorageAvailable = false;
+  try{
+    localStorage.setItem('orion-storage-test', '1');
+    localStorage.removeItem('orion-storage-test');
+    localStorageAvailable = true;
+  }catch(e){ /* private browsing or otherwise blocked - no local persistence available */ }
+
+  async function loadState(){
+    if(storageAvailable){
+      try{
+        const res = await window.storage.get('orion-revealed-rooms', false);
+        if(res && res.value) revealed = new Set(JSON.parse(res.value));
+      }catch(e){ /* nothing saved yet */ }
+      try{
+        const res2 = await window.storage.get('orion-active-runes', false);
+        if(res2 && res2.value) activeRunes = new Set(JSON.parse(res2.value));
+      }catch(e){ /* nothing saved yet */ }
+    } else if(localStorageAvailable){
+      try{
+        const v = localStorage.getItem('orion-revealed-rooms');
+        if(v) revealed = new Set(JSON.parse(v));
+      }catch(e){ /* nothing saved yet */ }
+      try{
+        const v2 = localStorage.getItem('orion-active-runes');
+        if(v2) activeRunes = new Set(JSON.parse(v2));
+      }catch(e){ /* nothing saved yet */ }
+    }
+    render();
+    renderNav();
+  }
+  async function saveState(){
+    if(storageAvailable){
+      try{ await window.storage.set('orion-revealed-rooms', JSON.stringify(Array.from(revealed)), false); }
+      catch(e){ /* best-effort only */ }
+      try{ await window.storage.set('orion-active-runes', JSON.stringify(Array.from(activeRunes)), false); }
+      catch(e){ /* best-effort only */ }
+    } else if(localStorageAvailable){
+      try{ localStorage.setItem('orion-revealed-rooms', JSON.stringify(Array.from(revealed))); }
+      catch(e){ /* best-effort only */ }
+      try{ localStorage.setItem('orion-active-runes', JSON.stringify(Array.from(activeRunes))); }
+      catch(e){ /* best-effort only */ }
+    }
+    // push to the shared Firestore doc so the player tablet updates live (GM only - the
+    // player view never writes, it only listens)
+    pushStateToFirestore();
+  }
+
+  // ---------- tile navigation (root -> sections -> rooms) ----------
+  const SECTIONS = [
+    { key:'entry', label:'Entry section', rooms:[
+      'shuttle-bay-1','shuttle-bay-2','lobby','garage','power-distribution-room','medical-clinic','central-hub','corridor-entry-1','corridor-entry-2','wcf','wcm'
+    ]},
+    { key:'living', label:'Living quarters', rooms:['corridor-blank-1','corridor-blank-2','laundry-room','ubications','canteen','kitchen','food-storage'] },
+    { key:'security', label:'Security and command', rooms:[
+      'security-room','secret-security-room','it-room','srv-room','zasedacka','vault','directors-office','safe-room','corridor-blue-1','corridor-12','corridor-blue-3','S2'
+    ]},
+    { key:'research', label:'Research and development', rooms:[
+      'chemical-lab','biological-lab','genetic-lab','research-archive','sample-archive','physic-lab',
+      'medical-lab','bio-hazard-room','corridor-yellow','corridor-yellow-2','corridor-yellow-3','corridor-yellow-4','corridor-yellow-5','corridor-yellow-6'
+    ]},
+    { key:'engineering', label:'Engineering and maintenance', rooms:['corridor-red-1','workshop-room','spare-parts-storage','corridor-red-2','system-control-room','waste-disposal','maintenance-room','corridor-red-3','energy-room','blast-field-generator-room'] },
+  ];
+
+  let navLevel = 0;      // 0 = root, 1 = sections, 2 = rooms within a section
+  let navSection = null; // the section object, once at level 2
+
+  function makeTile(label, onClick, opts){
+    opts = opts || {};
+    const btn = document.createElement('button');
+    btn.className = 'tile' + (opts.active ? ' active' : '') + (opts.disabled ? ' disabled' : '');
+    btn.textContent = label + (opts.active ? '  ✓' : '');
+    if(!opts.disabled) btn.addEventListener('click', onClick);
+    return btn;
+  }
+
+  function sectionCounts(sec){
+    const ids = sec.rooms.filter(rid => ROOMS[rid] && ROOMS[rid].selectable);
+    const done = ids.filter(rid => revealed.has(rid)).length;
+    return {done, total: ids.length};
+  }
+
+  function renderNav(){
+    const grid = document.getElementById('tileGrid');
+    const backBtn = document.getElementById('navBackBtn');
+    const title = document.getElementById('navTitle');
+    const sectionActions = document.getElementById('sectionActions');
+    const rootActions = document.getElementById('rootActions');
+    grid.innerHTML = '';
+    document.getElementById('runeMsg').textContent = '';
+    sectionActions.style.display = (navLevel === 2) ? '' : 'none';
+    rootActions.style.display = (navLevel === 0) ? '' : 'none';
+
+    if(navLevel === 0){
+      backBtn.style.display = 'none';
+      title.textContent = 'Menu';
+      grid.appendChild(makeTile('Místnosti', ()=>{ navLevel = 1; renderNav(); }));
+      grid.appendChild(makeTile(`Runy (${activeRunes.size}/${RUNES.length})`, ()=>{ navLevel = 3; renderNav(); }));
+
+    } else if(navLevel === 1){
+      backBtn.style.display = '';
+      title.textContent = 'Místnosti';
+      for(const sec of SECTIONS){
+        const {done, total} = sectionCounts(sec);
+        const label = `${sec.label} (${done}/${total})`;
+        grid.appendChild(makeTile(label, ()=>{ navSection = sec; navLevel = 2; renderNav(); },
+          {disabled: total === 0, active: total > 0 && done === total}));
+      }
+
+    } else if(navLevel === 2){
+      backBtn.style.display = '';
+      title.textContent = navSection.label;
+      const ids = navSection.rooms.filter(rid => ROOMS[rid] && ROOMS[rid].selectable);
+      if(ids.length === 0){
+        const empty = document.createElement('div');
+        empty.className = 'empty-note';
+        empty.textContent = 'Zatím žádné místnosti.';
+        grid.appendChild(empty);
+      }
+      for(const rid of ids){
+        grid.appendChild(makeTile(ROOMS[rid].name, ()=>{
+          toggleRoom(rid);
+          render(); saveState(); renderNav();
+        }, {active: revealed.has(rid)}));
+      }
+    } else if(navLevel === 3){
+      backBtn.style.display = '';
+      title.textContent = 'Runy';
+      for(const rune of RUNES){
+        grid.appendChild(makeTile('Runa ' + rune.num, ()=>{
+          if(rune.room && !revealed.has(rune.room)){
+            document.getElementById('runeMsg').textContent =
+              'Místnost, ve které se nachází tato runa, ještě nebyla objevena.';
+            return;
+          }
+          document.getElementById('runeMsg').textContent = '';
+          if(activeRunes.has(rune.num)) activeRunes.delete(rune.num);
+          else activeRunes.add(rune.num);
+          render(); saveState(); renderNav();
+        }, {active: activeRunes.has(rune.num), disabled: rune.gx === undefined}));
+      }
+    }
+  }
+
+  document.getElementById('navBackBtn').addEventListener('click', ()=>{
+    if(navLevel === 2) navLevel = 1;
+    else if(navLevel === 1) navLevel = 0;
+    else if(navLevel === 3) navLevel = 0;
+    renderNav();
+  });
+
+  document.getElementById('revealSectionBtn').addEventListener('click', ()=>{
+    if(!navSection) return;
+    customConfirm(`Odhalit celou sekci "${navSection.label}"?`, ()=>{
+      const ids = navSection.rooms.filter(rid => ROOMS[rid] && ROOMS[rid].selectable);
+      for(const rid of ids) revealRoom(rid);
+      render(); saveState(); renderNav();
+    });
+  });
+
+  // ---------- fullscreen ----------
+  const fullscreenBtn = document.getElementById('fullscreenBtn');
+  const appRoot = document.getElementById('app');
+  function isFullscreen(){
+    return !!(document.fullscreenElement || document.webkitFullscreenElement);
+  }
+  function updateFullscreenIcon(){
+    fullscreenBtn.innerHTML = '&#9974;';
+    fullscreenBtn.title = isFullscreen() ? 'Ukončit celou obrazovku' : 'Celá obrazovka';
+  }
+  fullscreenBtn.addEventListener('click', async ()=>{
+    try{
+      if(!isFullscreen()){
+        if(appRoot.requestFullscreen) await appRoot.requestFullscreen();
+        else if(appRoot.webkitRequestFullscreen) appRoot.webkitRequestFullscreen();
+        else throw new Error('fullscreen not supported');
+      } else {
+        if(document.exitFullscreen) await document.exitFullscreen();
+        else if(document.webkitExitFullscreen) document.webkitExitFullscreen();
+      }
+    }catch(e){
+      // some mobile browsers (notably iOS Safari on many versions) don't support the
+      // Fullscreen API at all - "Add to Home Screen" is the reliable fallback there
+      fullscreenBtn.title = 'Celá obrazovka není v tomto prohlížeči podporovaná - zkus "Přidat na plochu"';
+    }
+  });
+  document.addEventListener('fullscreenchange', updateFullscreenIcon);
+  document.addEventListener('webkitfullscreenchange', updateFullscreenIcon);
+  updateFullscreenIcon();
+
+  // ---------- gear panel ----------
+  const gearBtn = document.getElementById('gearBtn');
+  const panel = document.getElementById('settingsPanel');
+  gearBtn.addEventListener('click', ()=>{
+    const open = panel.classList.toggle('open');
+    gearBtn.classList.toggle('active', open);
+  });
+  document.addEventListener('click', (e)=>{
+    // use composedPath (captured at dispatch time) instead of panel.contains(e.target):
+    // tile clicks rebuild the tile grid synchronously, which can detach e.target from
+    // the DOM before this listener runs, making a plain contains() check unreliable
+    const path = e.composedPath ? e.composedPath() : [e.target];
+    if(!path.includes(panel) && e.target !== gearBtn && panel.classList.contains('open')){
+      panel.classList.remove('open');
+      gearBtn.classList.remove('active');
+    }
+  });
+
+  document.getElementById('revealAllBtn').addEventListener('click', ()=>{
+    customConfirm('Opravdu chceš odhalit celou mapu?', ()=>{
+      revealed = new Set(Object.keys(ROOMS));
+      render(); saveState(); renderNav();
+    });
+  });
+
+  document.getElementById('hideAllBtn').addEventListener('click', ()=>{
+    customConfirm('Opravdu chceš zakrýt celou mapu?', ()=>{
+      revealed = new Set();
+      render(); saveState(); renderNav();
+    });
+  });
+
+  // ---------- pan & zoom ----------
+  function setupPanZoom(){
+    const stage = document.getElementById('mapStage');
+    const canvasEl = document.getElementById('mapCanvas');
+    let panX = 40, panY = 40, scale = 1;
+    let dragging = false, lastX = 0, lastY = 0, moved = false;
+
+    function apply(){
+      canvasEl.style.transform = `translate(${panX}px,${panY}px) scale(${scale})`;
+    }
+
+    stage.addEventListener('pointerdown', (e)=>{
+      dragging = true; moved = false;
+      lastX = e.clientX; lastY = e.clientY;
+      stage.classList.add('dragging');
+      stage.setPointerCapture(e.pointerId);
+    });
+    stage.addEventListener('pointermove', (e)=>{
+      if(!dragging) return;
+      const dx = e.clientX - lastX, dy = e.clientY - lastY;
+      if(Math.abs(dx) > 2 || Math.abs(dy) > 2) moved = true;
+      panX += dx; panY += dy;
+      lastX = e.clientX; lastY = e.clientY;
+      apply();
+    });
+    function endDrag(e){
+      dragging = false;
+      stage.classList.remove('dragging');
+    }
+    stage.addEventListener('pointerup', endDrag);
+    stage.addEventListener('pointercancel', endDrag);
+
+    stage.addEventListener('wheel', (e)=>{
+      e.preventDefault();
+      const rect = stage.getBoundingClientRect();
+      const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+      const factor = e.deltaY < 0 ? 1.12 : 1/1.12;
+      const newScale = Math.min(4, Math.max(0.25, scale*factor));
+      // keep the point under the cursor fixed while zooming
+      panX = mx - (mx - panX) * (newScale/scale);
+      panY = my - (my - panY) * (newScale/scale);
+      scale = newScale;
+      apply();
+    }, {passive:false});
+
+    document.getElementById('zoomInBtn').addEventListener('click', ()=>{
+      const rect = stage.getBoundingClientRect();
+      const mx = rect.width/2, my = rect.height/2;
+      const newScale = Math.min(4, scale*1.25);
+      panX = mx - (mx - panX) * (newScale/scale);
+      panY = my - (my - panY) * (newScale/scale);
+      scale = newScale; apply();
+    });
+    document.getElementById('zoomOutBtn').addEventListener('click', ()=>{
+      const rect = stage.getBoundingClientRect();
+      const mx = rect.width/2, my = rect.height/2;
+      const newScale = Math.max(0.25, scale/1.25);
+      panX = mx - (mx - panX) * (newScale/scale);
+      panY = my - (my - panY) * (newScale/scale);
+      scale = newScale; apply();
+    });
+    document.getElementById('zoomResetBtn').addEventListener('click', ()=>{
+      panX = 40; panY = 40; scale = 1; apply();
+    });
+
+    apply();
+  }
+
+  // ---------- init ----------
+  renderNav();
+  loadState();
+  setupPanZoom();
+  initFirestoreSync();
+})();
+</script>
+</body>
+</html>
