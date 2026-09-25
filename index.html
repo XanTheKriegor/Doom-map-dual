@@ -1846,7 +1846,9 @@
 
   // ---------- fullscreen ----------
   const fullscreenBtn = document.getElementById('fullscreenBtn');
-  const appRoot = document.getElementById('app');
+  // fullscreen the whole page (<html>), not just #app - the gate/boot overlay screens are
+  // siblings of #app, not descendants of it, so fullscreening only #app would hide them
+  const appRoot = document.documentElement;
   function isFullscreen(){
     return !!(document.fullscreenElement || document.webkitFullscreenElement);
   }
