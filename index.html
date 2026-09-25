@@ -45,7 +45,11 @@
   body.player-mode .progress-wrap{ display:flex !important; }
 
   .progress-wrap{
-    display:none;align-items:center;gap:8px;flex:1;max-width:340px;margin:0 16px;
+    display:none;align-items:center;gap:8px;flex:1;max-width:380px;margin:0 16px;
+  }
+  .progress-label{
+    font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--text-dim);white-space:nowrap;flex-shrink:0;
   }
   .progress-track{
     flex:1;height:10px;border-radius:5px;background:var(--panel-2);
@@ -59,27 +63,78 @@
   }
   .progress-pct{font-size:15px;color:#ffffff;font-weight:700;min-width:44px;text-align:right;}
 
-  /* ---- entry gate screen (shown first; its button triggers fullscreen) ---- */
+  /* ---- entry gate screen (shown first; its button triggers fullscreen) ----
+     Original hellish/demonic mood board: near-black background, a slow rising
+     station access panel: a dark console background, a small brand line, and a
+     biometric sensor pad in the middle with a fingerprint pattern - no button label,
+     just the fingerprint itself as the tappable "button". A scan-line sweeps over it
+     at idle to invite a touch; tapping speeds it up and flashes green ("access granted")
+     before handing off to the boot sequence. */
   #gateScreen{
-    position:fixed;inset:0;background:#000;z-index:10000;
+    position:fixed;inset:0;z-index:10000;overflow:hidden;
+    background:
+      radial-gradient(ellipse 120% 70% at 50% 30%, rgba(255,180,84,.06) 0%, rgba(0,0,0,0) 60%),
+      radial-gradient(ellipse 140% 90% at 50% 100%, #0c1013 0%, #05070a 60%, #020304 100%);
     display:flex;align-items:center;justify-content:center;
     transition:opacity .5s ease;
   }
   #gateScreen.hide{opacity:0;pointer-events:none;}
-  #gateEnterBtn{
+  #gateVignette{
+    position:absolute;inset:0;pointer-events:none;
+    box-shadow:inset 0 0 160px 50px #000000;
+  }
+  #gateContent{
+    position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;
+    gap:22px;padding:20px;text-align:center;
+  }
+  #gateBrand{
     font-family: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
-    font-size:18px;letter-spacing:.25em;font-weight:700;
-    color:var(--accent);background:transparent;
-    border:2px solid var(--accent);border-radius:8px;
-    padding:18px 46px;cursor:pointer;text-transform:uppercase;
-    box-shadow:0 0 18px rgba(255,180,84,.35), inset 0 0 12px rgba(255,180,84,.12);
-    animation:gatePulse 2.2s ease-in-out infinite;
+    font-size:12px;letter-spacing:.4em;text-transform:uppercase;color:var(--text-dim);
   }
-  #gateEnterBtn:active{transform:scale(.97);}
-  @keyframes gatePulse{
-    0%,100%{ box-shadow:0 0 18px rgba(255,180,84,.35), inset 0 0 12px rgba(255,180,84,.12); }
-    50%{ box-shadow:0 0 30px rgba(255,180,84,.65), inset 0 0 18px rgba(255,180,84,.22); }
+  #gateEnterBtn{
+    position:relative;width:150px;height:150px;border-radius:16px;cursor:pointer;
+    background:radial-gradient(circle at 50% 40%, #171e23 0%, #0c1114 70%);
+    border:1.5px solid var(--accent-dim);
+    box-shadow:0 0 0 rgba(255,180,84,0);
+    display:flex;align-items:center;justify-content:center;
+    overflow:hidden;padding:0;
+    animation:gateBreathe 3s ease-in-out infinite;
   }
+  @keyframes gateBreathe{
+    0%,100%{ box-shadow:0 0 14px rgba(255,180,84,.18), inset 0 0 10px rgba(255,180,84,.06); border-color:var(--accent-dim); }
+    50%{ box-shadow:0 0 26px rgba(255,180,84,.4), inset 0 0 18px rgba(255,180,84,.14); border-color:var(--accent); }
+  }
+  #gateEnterBtn.scanning{ animation:none; border-color:#22c93a;
+    box-shadow:0 0 34px rgba(34,201,58,.65), inset 0 0 22px rgba(34,201,58,.25); }
+  #gateFingerprint{ width:76px; height:76px; position:relative; z-index:1; }
+  #gateFingerprint ellipse{
+    fill:none; stroke:var(--accent); stroke-width:2.2; stroke-linecap:round;
+    opacity:.85; transition:stroke .4s ease;
+  }
+  #gateEnterBtn.scanning #gateFingerprint ellipse{ stroke:#4ee06a; }
+  #gateScanLine{
+    position:absolute; left:6%; width:88%; height:3px; top:8%;
+    background:linear-gradient(90deg, rgba(255,180,84,0), rgba(255,180,84,.95), rgba(255,180,84,0));
+    filter:blur(.3px);
+    animation:gateScanMove 2.6s ease-in-out infinite;
+  }
+  #gateEnterBtn.scanning #gateScanLine{
+    background:linear-gradient(90deg, rgba(78,224,106,0), rgba(78,224,106,1), rgba(78,224,106,0));
+    animation:gateScanFast .35s linear infinite;
+  }
+  @keyframes gateScanMove{
+    0%,100%{ top:10%; } 50%{ top:82%; }
+  }
+  @keyframes gateScanFast{
+    0%{ top:6%; } 100%{ top:88%; }
+  }
+  #gateCaption, #gateCaptionScanning{
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+    font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--text-dim);
+  }
+  #gateCaptionScanning{ display:none; color:#4ee06a; }
+  #gateEnterBtn.scanning ~ #gateCaption{ display:none; }
+  #gateEnterBtn.scanning ~ #gateCaptionScanning{ display:block; }
 
   /* ---- boot / loading screen ---- */
   #bootScreen{
@@ -196,7 +251,22 @@
 <body>
 
 <div id="gateScreen">
-  <button id="gateEnterBtn">Vstup</button>
+  <div id="gateVignette"></div>
+  <div id="gateContent">
+    <div id="gateBrand">Stanice Orion</div>
+    <button id="gateEnterBtn" aria-label="Přiložit prst pro vstup" title="Přiložit prst">
+      <svg id="gateFingerprint" viewBox="0 0 100 100" aria-hidden="true">
+        <ellipse cx="50" cy="53" rx="8"  ry="14"/>
+        <ellipse cx="50" cy="51" rx="16" ry="24" stroke-dasharray="90 12"/>
+        <ellipse cx="49" cy="49" rx="24" ry="33" stroke-dasharray="130 16"/>
+        <ellipse cx="51" cy="47" rx="32" ry="41" stroke-dasharray="170 22"/>
+        <ellipse cx="50" cy="46" rx="39" ry="47" stroke-dasharray="60 10 40 14"/>
+      </svg>
+      <div id="gateScanLine"></div>
+    </button>
+    <div id="gateCaption">Přiložte prst</div>
+    <div id="gateCaptionScanning">Ověřování...</div>
+  </div>
 </div>
 
 <div id="bootScreen" style="display:none;">
@@ -212,6 +282,7 @@
       <span class="brand-title">Stanice Orion</span>
     </div>
     <div class="progress-wrap" id="progressWrap">
+      <span class="progress-label">Odhaleno</span>
       <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
       <span class="progress-pct" id="progressPct">0%</span>
     </div>
@@ -2063,22 +2134,31 @@
     typeLine();
   }
 
-  // ---------- entry gate ----------
-  // A fullscreen request only works as a direct response to a user gesture, so it can't
-  // fire automatically on page load - this button is that gesture. It requests fullscreen
-  // (best-effort; some browsers/devices don't support it, that's fine) and then hands off
-  // to the Matrix-style boot sequence.
-  document.getElementById('gateEnterBtn').addEventListener('click', async ()=>{
+  // ---------- entry gate (fingerprint scanner) ----------
+  // Tapping the fingerprint pad is the required user gesture that unlocks a fullscreen
+  // request (browsers won't allow it on page load with no interaction). On tap: switch the
+  // pad into a fast "scanning" state (green sweep) for a beat, then request fullscreen and
+  // hand off to the Matrix-style boot sequence.
+  let gateBusy = false;
+  document.getElementById('gateEnterBtn').addEventListener('click', async (e)=>{
+    if(gateBusy) return;
+    gateBusy = true;
+    const btn = e.currentTarget;
+    btn.classList.add('scanning');
+
     try{
       if(!isFullscreen()){
         if(appRoot.requestFullscreen) await appRoot.requestFullscreen();
         else if(appRoot.webkitRequestFullscreen) appRoot.webkitRequestFullscreen();
       }
-    }catch(e){ /* fullscreen not supported/allowed here - continue anyway */ }
-    const gate = document.getElementById('gateScreen');
-    gate.classList.add('hide');
-    setTimeout(()=> gate.remove(), 550);
-    runBootSequence();
+    }catch(err){ /* fullscreen not supported/allowed here - continue anyway */ }
+
+    setTimeout(()=>{
+      const gate = document.getElementById('gateScreen');
+      gate.classList.add('hide');
+      setTimeout(()=> gate.remove(), 550);
+      runBootSequence();
+    }, 750); // let the "access granted" scan flash read before handing off
   });
 
   // ---------- init ----------
