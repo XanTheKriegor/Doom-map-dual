@@ -1935,7 +1935,7 @@
       for(let i=0;i<N;i++){
         drops.push(new Promise(resolve => setTimeout(()=> spawnBloodDrop(oldPct).then(resolve), i*110)));
       }
-      Promise.all(drops).then(setLevel);
+      Promise.all(drops).then(() => setLevel(false));
     } else {
       setLevel(); // hiding rooms/runes: drop the level immediately, no drop animation
     }
