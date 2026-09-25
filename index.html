@@ -98,9 +98,9 @@
   }
   .tube-ticks span{ display:block; width:100%; height:1px; background:rgba(255,255,255,.22); }
   .blood-drop{
-    position:absolute; top:-8px; width:7px; height:9px; left:40%;
-    background:#d81f2c; border-radius:50% 50% 50% 50% / 62% 62% 38% 38%;
-    box-shadow:0 0 5px rgba(216,31,44,.75); pointer-events:none; z-index:5;
+    position:absolute; top:-14px; width:13px; height:17px; left:40%;
+    background:#e2222f; border-radius:50% 50% 50% 50% / 62% 62% 38% 38%;
+    box-shadow:0 0 8px rgba(216,31,44,.8); pointer-events:none; z-index:5;
   }
 
   /* ---- entry gate screen (shown first; its button triggers fullscreen) ----
@@ -1708,30 +1708,33 @@
     });
   }
 
-  // Drips a little blood drop from the top of the tube down to wherever the liquid
-  // surface currently sits, using the Web Animations API so each drop can target its own
-  // end position (the fill level keeps changing as more drops land / rooms get revealed).
-  function spawnBloodDrop(pct){
+  // Drips a blood drop from the top of the tube down to wherever the liquid surface
+  // currently sits (the OLD level - the level only rises once the drops have landed, see
+  // updateProgress below), using the Web Animations API so each drop can target its own
+  // end position and we know exactly when it lands (anim.finished).
+  function spawnBloodDrop(landPct){
     const wrap = document.getElementById('tubeWrap');
-    if(!wrap) return;
+    if(!wrap) return Promise.resolve();
     const drop = document.createElement('div');
     drop.className = 'blood-drop';
-    drop.style.left = (30 + Math.random()*40) + '%';
+    drop.style.left = (26 + Math.random()*44) + '%';
     wrap.appendChild(drop);
-    const endTop = Math.max(3, 100 - pct);
+    const endTop = Math.max(2, 100 - landPct);
+    const duration = 480 + Math.random()*120;
     if(typeof drop.animate === 'function'){
       const anim = drop.animate([
-        { top: '-9px', opacity: 1, transform: 'scaleY(1)' },
-        { top: endTop + '%', opacity: 1, transform: 'scaleY(1.6)', offset: 0.93 },
-        { top: endTop + '%', opacity: 0, transform: 'scaleY(.4)' }
-      ], { duration: 520 + Math.random()*140, easing: 'cubic-bezier(.55,0,1,.45)' });
-      anim.onfinish = () => drop.remove();
+        { top: '-16px', opacity: 1, transform: 'scaleY(1) scaleX(1)' },
+        { top: endTop + '%', opacity: 1, transform: 'scaleY(1.7) scaleX(.85)', offset: 0.9 },
+        { top: endTop + '%', opacity: 0, transform: 'scaleY(.5) scaleX(1.3)' }
+      ], { duration, easing: 'cubic-bezier(.55,0,1,.45)' });
+      return anim.finished.then(()=> drop.remove()).catch(()=> drop.remove());
     } else {
-      setTimeout(()=> drop.remove(), 700); // fallback: no animation, just a brief blip
+      return new Promise(resolve => setTimeout(()=>{ drop.remove(); resolve(); }, 700));
     }
   }
 
   let lastDoneCount = 0;
+  let lastPct = 0;
   let progressInitialized = false; // avoids a flurry of drops when restoring saved state on load
   function updateProgress(){
     const roomIds = Object.keys(ROOMS).filter(rid => ROOMS[rid].selectable);
@@ -1743,13 +1746,29 @@
     const pct = total > 0 ? Math.round((done/total)*100) : 0;
     const liquid = document.getElementById('tubeLiquid');
     const pctEl = document.getElementById('tubePct');
-    if(liquid){ liquid.style.height = pct + '%'; liquid.classList.toggle('empty', pct <= 0); }
     if(pctEl) pctEl.textContent = pct + '%';
-    if(progressInitialized && done > lastDoneCount){
-      const drops = Math.min(done - lastDoneCount, 6); // cap the flurry on bulk reveals
-      for(let i=0;i<drops;i++) setTimeout(()=> spawnBloodDrop(pct), i*130);
+
+    function setLevel(){
+      if(liquid){ liquid.style.height = pct + '%'; liquid.classList.toggle('empty', pct <= 0); }
+    }
+
+    if(!progressInitialized){
+      setLevel();
+    } else if(done > lastDoneCount){
+      // drops fall to the OLD (current on-screen) level first; only once the last one
+      // has landed does the surface actually rise to the new percentage
+      const oldPct = lastPct;
+      const N = 5;
+      const drops = [];
+      for(let i=0;i<N;i++){
+        drops.push(new Promise(resolve => setTimeout(()=> spawnBloodDrop(oldPct).then(resolve), i*110)));
+      }
+      Promise.all(drops).then(setLevel);
+    } else {
+      setLevel(); // hiding rooms/runes: drop the level immediately, no drop animation
     }
     lastDoneCount = done;
+    lastPct = pct;
     progressInitialized = true;
   }
 
