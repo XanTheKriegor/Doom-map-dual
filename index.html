@@ -44,54 +44,64 @@
   body.player-mode .sync-badge{ display:inline-flex !important; }
   body.player-mode .tube-wrap, body.player-mode .tube-label{ display:block !important; }
 
-  /* ---- progress vial: a test tube in the top-left that fills with "blood" as more of
-     the map is revealed. The wavy surface is a classic CSS trick - a wide ellipse
-     rotating behind a clipped box reads as a liquid meniscus. A small skew (--tilt,
-     driven from JS while the player pans/zooms the map) makes it slosh a little. ---- */
+  /* ---- progress vial: a tall test tube running nearly the full height of the screen,
+     filling with "blood" as more of the map gets revealed. The surface is a real wavy
+     SVG path (two tiled copies scrolling sideways in a seamless loop), not a rotating
+     ellipse - two layers at different speeds/opacity give it some depth. A skew (--tilt,
+     driven from JS while the player pans/zooms the map) makes it slosh, and every newly
+     revealed room/rune drops an animated droplet in from the top down to the surface. */
   .tube-wrap, .tube-label{ display:none; }
+  .tube-label{
+    position:fixed; left:8px; top:56px; z-index:21; width:64px; text-align:center;
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+    font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim);line-height:1.4;
+  }
+  #tubePct{ display:block; font-size:17px; color:#fff; font-weight:700; letter-spacing:0; }
   .tube-wrap{
-    position:fixed; left:16px; top:64px; z-index:20;
-    width:46px; height:180px;
+    position:fixed; left:16px; top:94px; bottom:22px; z-index:20;
+    width:50px;
     border:2px solid rgba(255,255,255,.32);
     border-top-left-radius:7px; border-top-right-radius:7px;
-    border-bottom-left-radius:23px; border-bottom-right-radius:23px;
+    border-bottom-left-radius:25px; border-bottom-right-radius:25px;
     background:rgba(255,255,255,.025);
     box-shadow:0 4px 16px rgba(0,0,0,.45), inset 0 0 10px rgba(255,255,255,.05);
     overflow:hidden;
   }
   .tube-liquid{
-    position:absolute; left:-30%; right:-30%; bottom:0; height:0%;
-    background:linear-gradient(180deg, #e8283a 0%, #900e19 100%);
+    position:absolute; left:0; right:0; bottom:0; height:0%;
     transform:skewX(var(--tilt,0deg)); transform-origin:bottom center;
     transition:height .6s ease, transform .45s cubic-bezier(.22,1,.36,1);
   }
-  .tube-liquid::before, .tube-liquid::after{
-    content:"";position:absolute; left:50%; top:-9px;
-    width:220%; height:22px; background:inherit; border-radius:44%;
-    animation:tubeWave 5s linear infinite;
-  }
-  .tube-liquid::after{ top:-6px; opacity:.55; animation-duration:7.5s; animation-direction:reverse; }
   .tube-liquid.empty{ opacity:0; }
-  @keyframes tubeWave{
-    from{ transform:translateX(-50%) rotate(0deg); }
-    to{ transform:translateX(-50%) rotate(360deg); }
+  .tube-liquid-fill{
+    position:absolute; left:-1px; right:-1px; top:9px; bottom:0;
+    background:linear-gradient(180deg, #c81a26 0%, #7d0c15 100%);
   }
+  .tube-wave-wrap{
+    position:absolute; left:0; top:-7px; height:16px; width:200%;
+    display:flex; will-change:transform;
+  }
+  .tube-wave-wrap svg{ width:50%; height:100%; flex:0 0 50%; display:block; }
+  .tube-wave-wrap.wave-back{ opacity:.5; animation:tubeWaveScroll 4.6s linear infinite; }
+  .tube-wave-wrap.wave-back svg path{ fill:#7d0c15; }
+  .tube-wave-wrap.wave-front{ opacity:1; animation:tubeWaveScroll 2.5s linear infinite reverse; }
+  .tube-wave-wrap.wave-front svg path{ fill:#d81f2c; }
+  @keyframes tubeWaveScroll{ from{ transform:translateX(0); } to{ transform:translateX(-50%); } }
   .tube-glass-shine{
-    position:absolute; left:6px; top:10px; bottom:16px; width:5px;
+    position:absolute; left:6px; top:10px; bottom:18px; width:5px;
     background:linear-gradient(180deg, rgba(255,255,255,.4), rgba(255,255,255,.04));
     border-radius:4px; pointer-events:none;
   }
   .tube-ticks{
-    position:absolute; right:5px; top:14px; bottom:18px; width:8px;
+    position:absolute; right:5px; top:14px; bottom:20px; width:8px;
     display:flex; flex-direction:column; justify-content:space-between; pointer-events:none;
   }
   .tube-ticks span{ display:block; width:100%; height:1px; background:rgba(255,255,255,.22); }
-  .tube-label{
-    position:fixed; left:9px; top:250px; z-index:20; width:60px; text-align:center;
-    font-family: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
-    font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim);line-height:1.5;
+  .blood-drop{
+    position:absolute; top:-8px; width:7px; height:9px; left:40%;
+    background:#d81f2c; border-radius:50% 50% 50% 50% / 62% 62% 38% 38%;
+    box-shadow:0 0 5px rgba(216,31,44,.75); pointer-events:none; z-index:5;
   }
-  #tubePct{ display:block; font-size:16px; color:#fff; font-weight:700; letter-spacing:0; }
 
   /* ---- entry gate screen (shown first; its button triggers fullscreen) ----
      Original hellish/demonic mood board: near-black background, a slow rising
@@ -319,8 +329,18 @@
   </div>
 
   <div class="tube-wrap" id="tubeWrap" title="Odhaleno">
-    <div class="tube-liquid" id="tubeLiquid"></div>
-    <div class="tube-ticks"><span></span><span></span><span></span><span></span><span></span></div>
+    <div class="tube-liquid" id="tubeLiquid">
+      <div class="tube-wave-wrap wave-back">
+        <svg viewBox="0 0 100 16" preserveAspectRatio="none"><path d="M0,8 C12.5,4 12.5,12 25,8 C37.5,4 37.5,12 50,8 C62.5,4 62.5,12 75,8 C87.5,4 87.5,12 100,8 L100,16 L0,16 Z"/></svg>
+        <svg viewBox="0 0 100 16" preserveAspectRatio="none"><path d="M0,8 C12.5,4 12.5,12 25,8 C37.5,4 37.5,12 50,8 C62.5,4 62.5,12 75,8 C87.5,4 87.5,12 100,8 L100,16 L0,16 Z"/></svg>
+      </div>
+      <div class="tube-wave-wrap wave-front">
+        <svg viewBox="0 0 100 16" preserveAspectRatio="none"><path d="M0,9 C10,13 15,5 25,9 C35,13 40,5 50,9 C60,13 65,5 75,9 C85,13 90,5 100,9 L100,16 L0,16 Z"/></svg>
+        <svg viewBox="0 0 100 16" preserveAspectRatio="none"><path d="M0,9 C10,13 15,5 25,9 C35,13 40,5 50,9 C60,13 65,5 75,9 C85,13 90,5 100,9 L100,16 L0,16 Z"/></svg>
+      </div>
+      <div class="tube-liquid-fill"></div>
+    </div>
+    <div class="tube-ticks"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
     <div class="tube-glass-shine"></div>
   </div>
   <div class="tube-label"><span id="tubePct">0%</span>Odhaleno</div>
@@ -1688,6 +1708,31 @@
     });
   }
 
+  // Drips a little blood drop from the top of the tube down to wherever the liquid
+  // surface currently sits, using the Web Animations API so each drop can target its own
+  // end position (the fill level keeps changing as more drops land / rooms get revealed).
+  function spawnBloodDrop(pct){
+    const wrap = document.getElementById('tubeWrap');
+    if(!wrap) return;
+    const drop = document.createElement('div');
+    drop.className = 'blood-drop';
+    drop.style.left = (30 + Math.random()*40) + '%';
+    wrap.appendChild(drop);
+    const endTop = Math.max(3, 100 - pct);
+    if(typeof drop.animate === 'function'){
+      const anim = drop.animate([
+        { top: '-9px', opacity: 1, transform: 'scaleY(1)' },
+        { top: endTop + '%', opacity: 1, transform: 'scaleY(1.6)', offset: 0.93 },
+        { top: endTop + '%', opacity: 0, transform: 'scaleY(.4)' }
+      ], { duration: 520 + Math.random()*140, easing: 'cubic-bezier(.55,0,1,.45)' });
+      anim.onfinish = () => drop.remove();
+    } else {
+      setTimeout(()=> drop.remove(), 700); // fallback: no animation, just a brief blip
+    }
+  }
+
+  let lastDoneCount = 0;
+  let progressInitialized = false; // avoids a flurry of drops when restoring saved state on load
   function updateProgress(){
     const roomIds = Object.keys(ROOMS).filter(rid => ROOMS[rid].selectable);
     const doneRooms = roomIds.filter(rid => revealed.has(rid)).length;
@@ -1700,6 +1745,12 @@
     const pctEl = document.getElementById('tubePct');
     if(liquid){ liquid.style.height = pct + '%'; liquid.classList.toggle('empty', pct <= 0); }
     if(pctEl) pctEl.textContent = pct + '%';
+    if(progressInitialized && done > lastDoneCount){
+      const drops = Math.min(done - lastDoneCount, 6); // cap the flurry on bulk reveals
+      for(let i=0;i<drops;i++) setTimeout(()=> spawnBloodDrop(pct), i*130);
+    }
+    lastDoneCount = done;
+    progressInitialized = true;
   }
 
   function render(){
