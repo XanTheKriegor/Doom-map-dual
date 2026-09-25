@@ -59,6 +59,28 @@
   }
   .progress-pct{font-size:15px;color:#ffffff;font-weight:700;min-width:44px;text-align:right;}
 
+  /* ---- entry gate screen (shown first; its button triggers fullscreen) ---- */
+  #gateScreen{
+    position:fixed;inset:0;background:#000;z-index:10000;
+    display:flex;align-items:center;justify-content:center;
+    transition:opacity .5s ease;
+  }
+  #gateScreen.hide{opacity:0;pointer-events:none;}
+  #gateEnterBtn{
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+    font-size:18px;letter-spacing:.25em;font-weight:700;
+    color:var(--accent);background:transparent;
+    border:2px solid var(--accent);border-radius:8px;
+    padding:18px 46px;cursor:pointer;text-transform:uppercase;
+    box-shadow:0 0 18px rgba(255,180,84,.35), inset 0 0 12px rgba(255,180,84,.12);
+    animation:gatePulse 2.2s ease-in-out infinite;
+  }
+  #gateEnterBtn:active{transform:scale(.97);}
+  @keyframes gatePulse{
+    0%,100%{ box-shadow:0 0 18px rgba(255,180,84,.35), inset 0 0 12px rgba(255,180,84,.12); }
+    50%{ box-shadow:0 0 30px rgba(255,180,84,.65), inset 0 0 18px rgba(255,180,84,.22); }
+  }
+
   /* ---- boot / loading screen ---- */
   #bootScreen{
     position:fixed;inset:0;background:#000;z-index:9999;
@@ -173,7 +195,11 @@
 </head>
 <body>
 
-<div id="bootScreen">
+<div id="gateScreen">
+  <button id="gateEnterBtn">Vstup</button>
+</div>
+
+<div id="bootScreen" style="display:none;">
   <canvas id="matrixCanvas"></canvas>
   <div id="bootText"><pre id="bootLines"></pre></div>
 </div>
@@ -1991,9 +2017,10 @@
   }
 
   function runBootSequence(){
+    const screen = document.getElementById('bootScreen');
+    screen.style.display = 'flex';
     const stopRain = startMatrixRain();
     const linesEl = document.getElementById('bootLines');
-    const screen = document.getElementById('bootScreen');
     const lines = [
       'INICIALIZACE SYSTÉMU...',
       'PŘIPOJOVÁNÍ K SERVERU STANICE ORION...',
@@ -2034,12 +2061,29 @@
     typeLine();
   }
 
+  // ---------- entry gate ----------
+  // A fullscreen request only works as a direct response to a user gesture, so it can't
+  // fire automatically on page load - this button is that gesture. It requests fullscreen
+  // (best-effort; some browsers/devices don't support it, that's fine) and then hands off
+  // to the Matrix-style boot sequence.
+  document.getElementById('gateEnterBtn').addEventListener('click', async ()=>{
+    try{
+      if(!isFullscreen()){
+        if(appRoot.requestFullscreen) await appRoot.requestFullscreen();
+        else if(appRoot.webkitRequestFullscreen) appRoot.webkitRequestFullscreen();
+      }
+    }catch(e){ /* fullscreen not supported/allowed here - continue anyway */ }
+    const gate = document.getElementById('gateScreen');
+    gate.classList.add('hide');
+    setTimeout(()=> gate.remove(), 550);
+    runBootSequence();
+  });
+
   // ---------- init ----------
   renderNav();
   loadState();
   setupPanZoom();
   initFirestoreSync();
-  runBootSequence();
 })();
 </script>
 </body>
