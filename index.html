@@ -2661,12 +2661,12 @@
         setTimeout(()=>{
           screen.classList.add('hide');
           setTimeout(()=> screen.remove(), 700);
-        }, 450);
+        }, 225);
         return;
       }
       const line = lines[i];
-      const charDelay = line.fast ? 3 : 18;
-      const linePause = line.fast ? 45 : 220;
+      const charDelay = line.fast ? 1.5 : 9;
+      const linePause = line.fast ? 22 : 110;
       let c = 0;
       function typeChar(){
         if(c <= line.text.length){
