@@ -306,18 +306,17 @@
     transition:opacity .6s ease;
   }
   #bootScreen.hide{opacity:0;pointer-events:none;}
-  #matrixCanvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
   #bootText{
     position:relative;z-index:1;color:#22ff55;
     font-family: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
-    font-size:14px;line-height:1.7;text-shadow:0 0 6px #22ff55,0 0 14px rgba(34,255,85,.5);
-    padding:24px;max-width:92%;width:520px;
+    font-size:13px;line-height:1.55;text-shadow:0 0 6px #22ff55,0 0 14px rgba(34,255,85,.5);
+    padding:24px;max-width:92%;width:640px;max-height:78vh;overflow:hidden;
   }
-  #bootLines{margin:0;white-space:pre-wrap;word-break:break-word;min-height:1.7em;}
+  #bootLines{margin:0;white-space:pre-wrap;word-break:break-word;min-height:1.55em;}
   #bootCursor{display:inline-block;width:8px;background:#22ff55;animation:bootblink 1s step-end infinite;}
   @keyframes bootblink{50%{opacity:0;}}
   @media (max-width:480px){
-    #bootText{font-size:12px;padding:16px;}
+    #bootText{font-size:11px;padding:16px;}
   }
   /* just a small light now - green and steady when synced, red and blinking otherwise
      (connecting, waiting for the GM, or an actual sync error - the player doesn't need
@@ -448,7 +447,6 @@
 </div>
 
 <div id="bootScreen" style="display:none;">
-  <canvas id="matrixCanvas"></canvas>
   <div id="bootText"><pre id="bootLines"></pre></div>
 </div>
 
@@ -1993,8 +1991,9 @@
     const doneRooms = roomIds.filter(rid => revealed.has(rid)).length;
     const runeIds = RUNES.filter(r => r.gx !== undefined);
     const doneRunes = runeIds.filter(r => activeRunes.has(r.num)).length;
-    const total = roomIds.length + runeIds.length;
-    const done = doneRooms + doneRunes;
+    const doneCards = ownedCards.size;
+    const total = roomIds.length + runeIds.length + CARD_DEFS.length;
+    const done = doneRooms + doneRunes + doneCards;
     const pct = total > 0 ? Math.round((done/total)*100) : 0;
     const liquid = document.getElementById('tubeLiquid');
     const pctEl = document.getElementById('tubePct');
@@ -2597,68 +2596,89 @@
   }
 
   // ---------- boot / loading screen ----------
-  // Purely cosmetic ~5s "connecting to the station" splash, Matrix-style green-on-black,
-  // shown while the real app underneath is already loading/loaded - it just hides it.
-  function startMatrixRain(){
-    const canvas = document.getElementById('matrixCanvas');
-    const ctx = canvas.getContext('2d');
-    function resize(){ canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
-    resize();
-    window.addEventListener('resize', resize);
-    const glyphs = 'アイウエオカキクケコサシスセソ0123456789<>[]{}/\\|=+*#$%';
-    const fontSize = 16;
-    let columns = Math.floor(canvas.width / fontSize);
-    let drops = new Array(columns).fill(0).map(()=> Math.random()*-40);
-    const timer = setInterval(()=>{
-      ctx.fillStyle = 'rgba(0,0,0,0.08)';
-      ctx.fillRect(0,0,canvas.width,canvas.height);
-      ctx.font = fontSize + 'px monospace';
-      for(let x=0; x<drops.length; x++){
-        const ch = glyphs[Math.floor(Math.random()*glyphs.length)];
-        ctx.fillStyle = Math.random() < 0.06 ? '#c8ffd8' : '#22c93a';
-        ctx.fillText(ch, x*fontSize, drops[x]*fontSize);
-        if(drops[x]*fontSize > canvas.height && Math.random() > 0.975) drops[x] = 0;
-        drops[x]++;
-      }
-    }, 45);
-    return () => { clearInterval(timer); window.removeEventListener('resize', resize); };
-  }
-
+  // Purely cosmetic "connecting to the station" splash, green-on-black terminal, shown
+  // while the real app underneath is already loading/loaded - it just hides it. Reads
+  // like a hacking-montage terminal log: a handful of slow, readable Czech status lines,
+  // interspersed with bursts of fast, verbose Linux-style command output for flavour.
+  // Older lines scroll off the top of a fixed-size window, like a real terminal.
   function runBootSequence(){
     const screen = document.getElementById('bootScreen');
     screen.style.display = 'flex';
-    const stopRain = startMatrixRain();
     const linesEl = document.getElementById('bootLines');
+    const MAX_VISIBLE_LINES = 15;
+
+    // `fast:true` lines type and advance quickly (verbose filler); the rest type slowly
+    // so the player can actually read the important status lines.
     const lines = [
-      'INICIALIZACE SYSTÉMU...',
-      'PŘIPOJOVÁNÍ K SERVERU STANICE ORION...',
-      'OVĚŘOVÁNÍ PŘÍSTUPOVÝCH PRÁV... OK',
-      'SYNCHRONIZACE DAT SE STANICÍ...',
-      'NAČÍTÁNÍ MAPY STANICE...',
-      'PŘIPOJENO.'
+      { text:'INICIALIZACE SYSTÉMU...' },
+      { text:'root@ORION-CORE:~# ssh gm@10.0.4.12 -p 22', fast:true },
+      { text:'Connecting to 10.0.4.12 (10.0.4.12) port 22.', fast:true },
+      { text:"Warning: Permanently added '10.0.4.12' (ED25519) to the list of known hosts.", fast:true },
+      { text:'Authenticating with public key "orion_master_key"...', fast:true },
+      { text:'Access granted. Last login: Tue Sep 15 03:41:02 2287 from 10.0.4.1', fast:true },
+      { text:'PŘIPOJOVÁNÍ K SERVERU STANICE ORION...' },
+      { text:'root@ORION-CORE:/# uname -a', fast:true },
+      { text:'Linux orion-core 5.14.0-orion #1 SMP PREEMPT x86_64 GNU/Linux', fast:true },
+      { text:'root@ORION-CORE:/# systemctl status station-mapd.service', fast:true },
+      { text:'● station-mapd.service - Station Mapping Daemon', fast:true },
+      { text:'   Loaded: loaded (/etc/systemd/system/station-mapd.service; enabled)', fast:true },
+      { text:'   Active: active (running)', fast:true },
+      { text:'OVĚŘOVÁNÍ PŘÍSTUPOVÝCH PRÁV...' },
+      { text:'root@ORION-CORE:/# sudo ./bypass_firewall.sh --target=orion.local', fast:true },
+      { text:'[*] Probing 24 open ports...', fast:true },
+      { text:'[*] Firewall rule 0x4F2A bypassed', fast:true },
+      { text:'[*] Escalating privileges... done', fast:true },
+      { text:'OVĚŘOVÁNÍ PŘÍSTUPOVÝCH PRÁV... OK' },
+      { text:'DEŠIFROVÁNÍ BEZPEČNOSTNÍHO PROTOKOLU...' },
+      { text:'root@ORION-CORE:/# mount | grep orion', fast:true },
+      { text:'/dev/orion0 on /station type ext4 (rw,noatime)', fast:true },
+      { text:'/dev/orion1 on /station/vault type luks (rw,nosuid)', fast:true },
+      { text:'root@ORION-CORE:/# ls -la /station/sectors/', fast:true },
+      { text:'drwxr-xr-x  entry_section', fast:true },
+      { text:'drwxr-xr-x  living_quarters', fast:true },
+      { text:'drwxr-xr-x  security_and_command', fast:true },
+      { text:'drwxr-xr-x  research_and_development', fast:true },
+      { text:'drwxr-xr-x  engineering_and_maintenance', fast:true },
+      { text:'root@ORION-CORE:/# cat /var/log/orion/access.log | tail -5', fast:true },
+      { text:'[ 12:04:41 ] AUTH  uac_reader_03  card=BLUE   status=OK', fast:true },
+      { text:'[ 12:04:52 ] AUTH  uac_reader_07  card=YELLOW status=DENIED', fast:true },
+      { text:'[ 12:05:10 ] AUTH  uac_reader_11  card=RED    status=OK', fast:true },
+      { text:'SYNCHRONIZACE DAT SE STANICÍ...' },
+      { text:'root@ORION-CORE:/# ping -c 1 station.orion.local', fast:true },
+      { text:'64 bytes from station.orion.local: icmp_seq=1 ttl=64 time=0.031 ms', fast:true },
+      { text:'root@ORION-CORE:/# rsync -avz /station/map ./local_cache/', fast:true },
+      { text:'sending incremental file list', fast:true },
+      { text:'map.dat', fast:true },
+      { text:'sent 84,213 bytes  received 412 bytes  56,417 bytes/sec', fast:true },
+      { text:'NAČÍTÁNÍ MAPY STANICE...' },
+      { text:'PŘIPOJENO.' },
     ];
-    let text = '';
+
+    let visible = [];
     let i = 0;
     function typeLine(){
       if(i >= lines.length){
         setTimeout(()=>{
           screen.classList.add('hide');
-          stopRain();
           setTimeout(()=> screen.remove(), 700);
         }, 450);
         return;
       }
       const line = lines[i];
+      const charDelay = line.fast ? 3 : 18;
+      const linePause = line.fast ? 45 : 220;
       let c = 0;
       function typeChar(){
-        if(c <= line.length){
-          linesEl.innerHTML = escapeHtml(text + line.slice(0, c)) + '<span id="bootCursor">&nbsp;</span>';
+        if(c <= line.text.length){
+          const rendered = visible.concat(line.text.slice(0, c)).join('\n');
+          linesEl.innerHTML = escapeHtml(rendered) + '<span id="bootCursor">&nbsp;</span>';
           c++;
-          setTimeout(typeChar, 18);
+          setTimeout(typeChar, charDelay);
         } else {
-          text += line + '\n';
+          visible.push(line.text);
+          if(visible.length > MAX_VISIBLE_LINES) visible.shift();
           i++;
-          setTimeout(typeLine, 220);
+          setTimeout(typeLine, linePause);
         }
       }
       typeChar();
