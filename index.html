@@ -2,7 +2,7 @@
 <html lang="cs">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Stanice Orion</title>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
@@ -48,15 +48,16 @@
   body.player-mode.progress-bar-mode .tube-wrap, body.player-mode.progress-bar-mode .tube-label{ display:none !important; }
   body.player-mode.progress-bar-mode .hbar-wrap{ display:flex !important; }
 
-  /* ---- alternate progress display: a horizontal bar under the top bar, white border,
-     green fill, big white percentage + "Odhaleno" label - the original style, kept as
-     an option alongside the vial. Hidden unless the GM switches to it. ---- */
+  /* ---- alternate progress display: a bar sitting right in the top bar, between the
+     brand and the sync badge - white border, green fill, big white percentage + a
+     white "Odhaleno" label so it actually reads against the dark bar. The original
+     style, kept as an option alongside the vial. Hidden unless the GM switches to it. ---- */
   .hbar-wrap{
-    display:none; align-items:center; gap:12px;
-    padding:2px 16px 14px;
+    display:none; align-items:center; gap:10px;
+    flex:1; min-width:0; margin:0 18px;
   }
   .hbar-track{
-    flex:1; height:22px; border:2px solid #fff; border-radius:7px;
+    flex:1; min-width:40px; height:20px; border:2px solid #fff; border-radius:7px;
     overflow:hidden; background:rgba(255,255,255,.06);
   }
   .hbar-fill{
@@ -66,7 +67,7 @@
   .hbar-label{
     display:flex; align-items:baseline; gap:6px; white-space:nowrap;
     font-family: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
-    font-size:12px; letter-spacing:.05em; text-transform:uppercase; color:var(--text-dim);
+    font-size:12px; letter-spacing:.05em; text-transform:uppercase; color:#fff;
   }
   #hbarPct{ font-size:19px; font-weight:700; color:#fff; letter-spacing:0; text-transform:none; }
 
@@ -88,11 +89,9 @@
   .seg-switch .seg-opt.active{ color:#0b0e11; font-weight:600; }
 
   /* ---- progress vial: a tall test tube running nearly the full height of the screen,
-     filling with "blood" as more of the map gets revealed. The surface is a real wavy
-     SVG path (two tiled copies scrolling sideways in a seamless loop), not a rotating
-     ellipse - two layers at different speeds/opacity give it some depth. A skew (--tilt,
-     driven from JS while the player pans/zooms the map) makes it slosh, and every newly
-     revealed room/rune drops an animated droplet in from the top down to the surface. */
+     filling with "blood" as more of the map gets revealed. A plain still surface (no
+     wave/slosh animation) - every newly revealed room/rune drops an animated droplet in
+     from the top down to the surface, which is the only motion the liquid ever has. */
   .tube-wrap, .tube-label{ display:none; }
   .tube-label{
     position:fixed; left:8px; top:56px; z-index:21; width:64px; text-align:center;
@@ -112,24 +111,13 @@
   }
   .tube-liquid{
     position:absolute; left:0; right:0; bottom:0; height:0%;
-    transform:skewX(var(--tilt,0deg)); transform-origin:bottom center;
-    transition:height .6s ease, transform .45s cubic-bezier(.22,1,.36,1);
+    transition:height .6s ease;
   }
   .tube-liquid.empty{ opacity:0; }
   .tube-liquid-fill{
-    position:absolute; left:-1px; right:-1px; top:9px; bottom:0;
+    position:absolute; left:-1px; right:-1px; top:0; bottom:0;
     background:linear-gradient(180deg, #c81a26 0%, #7d0c15 100%);
   }
-  .tube-wave-wrap{
-    position:absolute; left:0; top:-7px; height:16px; width:200%;
-    display:flex; will-change:transform;
-  }
-  .tube-wave-wrap svg{ width:50%; height:100%; flex:0 0 50%; display:block; }
-  .tube-wave-wrap.wave-back{ opacity:.5; animation:tubeWaveScroll 4.6s linear infinite; }
-  .tube-wave-wrap.wave-back svg path{ fill:#7d0c15; }
-  .tube-wave-wrap.wave-front{ opacity:1; animation:tubeWaveScroll 2.5s linear infinite reverse; }
-  .tube-wave-wrap.wave-front svg path{ fill:#d81f2c; }
-  @keyframes tubeWaveScroll{ from{ transform:translateX(0); } to{ transform:translateX(-50%); } }
   .tube-glass-shine{
     position:absolute; left:6px; top:10px; bottom:18px; width:5px;
     background:linear-gradient(180deg, rgba(255,255,255,.4), rgba(255,255,255,.04));
@@ -327,7 +315,7 @@
     cursor:grab;touch-action:none;
   }
   #mapStage.dragging{cursor:grabbing;}
-  #mapCanvas{position:absolute;top:0;left:0;transform-origin:0 0;}
+  #mapCanvas{position:absolute;top:0;left:0;transform-origin:0 0;touch-action:none;}
   #mapCanvas svg{display:block;}
   .empty-hint{
     position:absolute;color:var(--text-dim);font-size:12px;letter-spacing:.05em;
@@ -337,6 +325,10 @@
     position:absolute;right:16px;bottom:16px;display:flex;flex-direction:column;gap:6px;z-index:4;
   }
   .zoomctl button{width:34px;height:34px;padding:0;font-size:16px;line-height:1;}
+  /* while the map view is locked to "show the whole map", pan/zoom is disabled and only
+     the lock toggle itself stays visible - the +/-/1:1 buttons would do nothing anyway */
+  #mapStage.locked .zoomctl .zoom-freeonly{ display:none; }
+  #fitMapBtn.active{ border-color:var(--accent); color:var(--accent); }
 
   /* ---------- settings panel (popover) ---------- */
   #settingsPanel{
@@ -429,6 +421,10 @@
       <span class="dot"></span>
       <span class="brand-title">Stanice Orion</span>
     </div>
+    <div class="hbar-wrap" id="hbarWrap">
+      <div class="hbar-track"><div class="hbar-fill" id="hbarFill"></div></div>
+      <div class="hbar-label"><span id="hbarPct">0%</span>Odhaleno</div>
+    </div>
     <div style="display:flex;gap:8px;align-items:center;">
       <span class="sync-badge" id="syncBadge"><span class="dot2"></span><span id="syncBadgeText">offline</span></span>
       <button class="gear-btn" id="fullscreenBtn" title="Celá obrazovka">&#9974;</button>
@@ -436,21 +432,8 @@
     </div>
   </div>
 
-  <div class="hbar-wrap" id="hbarWrap">
-    <div class="hbar-track"><div class="hbar-fill" id="hbarFill"></div></div>
-    <div class="hbar-label"><span id="hbarPct">0%</span>Odhaleno</div>
-  </div>
-
   <div class="tube-wrap" id="tubeWrap" title="Odhaleno">
     <div class="tube-liquid" id="tubeLiquid">
-      <div class="tube-wave-wrap wave-back">
-        <svg viewBox="0 0 100 16" preserveAspectRatio="none"><path d="M0,8 C12.5,4 12.5,12 25,8 C37.5,4 37.5,12 50,8 C62.5,4 62.5,12 75,8 C87.5,4 87.5,12 100,8 L100,16 L0,16 Z"/></svg>
-        <svg viewBox="0 0 100 16" preserveAspectRatio="none"><path d="M0,8 C12.5,4 12.5,12 25,8 C37.5,4 37.5,12 50,8 C62.5,4 62.5,12 75,8 C87.5,4 87.5,12 100,8 L100,16 L0,16 Z"/></svg>
-      </div>
-      <div class="tube-wave-wrap wave-front">
-        <svg viewBox="0 0 100 16" preserveAspectRatio="none"><path d="M0,9 C10,13 15,5 25,9 C35,13 40,5 50,9 C60,13 65,5 75,9 C85,13 90,5 100,9 L100,16 L0,16 Z"/></svg>
-        <svg viewBox="0 0 100 16" preserveAspectRatio="none"><path d="M0,9 C10,13 15,5 25,9 C35,13 40,5 50,9 C60,13 65,5 75,9 C85,13 90,5 100,9 L100,16 L0,16 Z"/></svg>
-      </div>
       <div class="tube-liquid-fill"></div>
     </div>
     <div class="tube-ticks"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
@@ -470,9 +453,10 @@
     <div id="mapCanvas"></div>
     <div class="empty-hint" id="emptyHint">zatím nic neobjeveno</div>
     <div class="zoomctl">
-      <button id="zoomInBtn" title="přiblížit">+</button>
-      <button id="zoomOutBtn" title="oddálit">−</button>
-      <button id="zoomResetBtn" title="zpět na výchozí pohled" style="font-size:11px;">1:1</button>
+      <button id="zoomInBtn" class="zoom-freeonly" title="přiblížit">+</button>
+      <button id="zoomOutBtn" class="zoom-freeonly" title="oddálit">−</button>
+      <button id="zoomResetBtn" class="zoom-freeonly" title="zpět na výchozí pohled" style="font-size:11px;">1:1</button>
+      <button id="fitMapBtn" title="Zobrazit celou mapu (uzamknout pohled)">&#128275;</button>
     </div>
   </div>
 
@@ -2346,19 +2330,6 @@
   });
 
   // ---------- pan & zoom ----------
-  // Nudges the progress vial's liquid with a little skew whenever the player pans/zooms
-  // the map, then eases back to upright - makes it read as an actual liquid rather than a
-  // static fill. Purely cosmetic; safe no-op if the tube isn't in the DOM (GM view, or
-  // before state loads).
-  let tubeTiltTimer = null;
-  function nudgeTube(deg){
-    const liquid = document.getElementById('tubeLiquid');
-    if(!liquid) return;
-    const clamped = Math.max(-16, Math.min(16, deg));
-    liquid.style.setProperty('--tilt', clamped + 'deg');
-    clearTimeout(tubeTiltTimer);
-    tubeTiltTimer = setTimeout(()=>{ liquid.style.setProperty('--tilt', '0deg'); }, 420);
-  }
 
   function setupPanZoom(){
     const stage = document.getElementById('mapStage');
@@ -2376,13 +2347,35 @@
     const activePointers = new Map(); // pointerId -> {x,y}
     let pinchStartDist = 0, pinchStartScale = 1, pinchStartPanX = 0, pinchStartPanY = 0;
     let pinchMidX = 0, pinchMidY = 0;
+    // "show the whole map" lock: freezes pan/zoom so the whole station is visible and
+    // fixed at once, instead of the player having to scroll/pinch around it
+    let mapLocked = false;
 
     function apply(){
       canvasEl.style.transform = `translate(${panX}px,${panY}px) scale(${scale})`;
     }
     function dist(a, b){ return Math.hypot(a.x - b.x, a.y - b.y); }
 
+    // fits the ENTIRE station layout (not just what's revealed - the full known bounds,
+    // so the frame doesn't shift as more gets revealed) inside the visible stage
+    function fitToScreen(){
+      const rect = stage.getBoundingClientRect();
+      const b = computeBounds();
+      const w = (b.maxX - b.minX) * CELL, h = (b.maxY - b.minY) * CELL;
+      if(w <= 0 || h <= 0) return;
+      const pad = 20;
+      const fitScale = Math.min((rect.width - pad*2)/w, (rect.height - pad*2)/h);
+      scale = fitScale;
+      panX = (rect.width - w*fitScale)/2;
+      panY = (rect.height - h*fitScale)/2;
+      apply();
+    }
+
     stage.addEventListener('pointerdown', (e)=>{
+      // don't hijack taps that land on one of the zoom/lock buttons - capturing the
+      // pointer here would stop the browser from firing their own 'click' event
+      if(e.target.closest('button')) return;
+      if(mapLocked) return;
       try{ stage.setPointerCapture(e.pointerId); }catch(err){ /* not fatal - keep tracking anyway */ }
       activePointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
       if(activePointers.size >= 2){
@@ -2423,7 +2416,6 @@
       panX += dx; panY += dy;
       lastX = e.clientX; lastY = e.clientY;
       apply();
-      nudgeTube(dx * -0.22);
     });
     function endDrag(e){
       activePointers.delete(e.pointerId);
@@ -2445,6 +2437,7 @@
 
     stage.addEventListener('wheel', (e)=>{
       e.preventDefault();
+      if(mapLocked) return;
       const rect = stage.getBoundingClientRect();
       const mx = e.clientX - rect.left, my = e.clientY - rect.top;
       const factor = e.deltaY < 0 ? 1.12 : 1/1.12;
@@ -2454,10 +2447,10 @@
       panY = my - (my - panY) * (newScale/scale);
       scale = newScale;
       apply();
-      nudgeTube(e.deltaY < 0 ? 7 : -7);
     }, {passive:false});
 
     document.getElementById('zoomInBtn').addEventListener('click', ()=>{
+      if(mapLocked) return;
       const rect = stage.getBoundingClientRect();
       const mx = rect.width/2, my = rect.height/2;
       const newScale = Math.min(4, scale*1.25);
@@ -2466,6 +2459,7 @@
       scale = newScale; apply();
     });
     document.getElementById('zoomOutBtn').addEventListener('click', ()=>{
+      if(mapLocked) return;
       const rect = stage.getBoundingClientRect();
       const mx = rect.width/2, my = rect.height/2;
       const newScale = Math.max(0.25, scale/1.25);
@@ -2474,8 +2468,32 @@
       scale = newScale; apply();
     });
     document.getElementById('zoomResetBtn').addEventListener('click', ()=>{
+      if(mapLocked) return;
       panX = 40; panY = 40; scale = 1; apply();
     });
+
+    const fitBtn = document.getElementById('fitMapBtn');
+    fitBtn.addEventListener('click', ()=>{
+      mapLocked = !mapLocked;
+      stage.classList.toggle('locked', mapLocked);
+      fitBtn.classList.toggle('active', mapLocked);
+      fitBtn.innerHTML = mapLocked ? '&#128274;' : '&#128275;';
+      fitBtn.title = mapLocked
+        ? 'Uzamčeno na celou mapu - klikni pro uvolnění posouvání a přibližování'
+        : 'Zobrazit celou mapu (uzamknout pohled)';
+      if(mapLocked){
+        // cancel anything mid-drag/pinch so nothing gets stuck
+        activePointers.clear();
+        dragging = false;
+        pinchStartDist = 0;
+        stage.classList.remove('dragging');
+        fitToScreen();
+      }
+    });
+
+    // re-fit if the viewport changes shape while locked (e.g. entering fullscreen,
+    // rotating a tablet)
+    window.addEventListener('resize', ()=>{ if(mapLocked) fitToScreen(); });
 
     apply();
   }
