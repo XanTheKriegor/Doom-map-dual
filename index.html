@@ -72,27 +72,25 @@
   #hbarPct{ font-size:19px; font-weight:700; color:#fff; letter-spacing:0; text-transform:none; }
 
   /* ---- UAC access card icons: appear in the top bar once the central hub is revealed.
-     Own, original badge design (rounded body, color stripe, "photo" dot, text lines) -
-     not a reproduction of any game's specific card art. Grey/dim until the GM marks that
-     card as picked up in settings, then it lights up in green (an access-granted colour,
-     independent of the card's own blue/yellow/red identity stripe, which stays visible
-     the whole time so the three stay tellable apart even before they're picked up). ---- */
-  .cards-row{ display:none; align-items:center; gap:5px; margin:0 2px; }
+     Uses the GM's own card art, uploaded to a "cards/" folder next to index.html (see the
+     img src paths below) - not anything generated or bundled here. Grey/dim until the GM
+     marks that card as picked up in settings, then it lights up green (an access-granted
+     glow around the GM's own artwork). ---- */
+  .cards-row{ display:none; align-items:center; gap:6px; margin:0 2px; }
   .cards-row.visible{ display:flex; }
   .card-icon{
-    width:26px; height:19px;
-    filter:grayscale(1) brightness(.55); opacity:.55;
+    width:22px; height:22px;
+    filter:grayscale(1) brightness(.5); opacity:.5;
     transition:filter .35s ease, opacity .35s ease, transform .3s ease;
   }
-  .card-icon svg{ display:block; width:100%; height:100%; overflow:visible; }
-  .card-icon .card-body{ fill:#1c232b; stroke:rgba(255,255,255,.35); stroke-width:1; }
-  .card-icon .card-dot{ fill:rgba(255,255,255,.55); }
-  .card-icon .card-line{ fill:rgba(255,255,255,.35); }
-  .card-icon.owned{
-    filter:none; opacity:1; transform:scale(1.07);
+  .card-icon img{
+    display:block; width:100%; height:100%; object-fit:contain;
+    image-rendering:pixelated; image-rendering:crisp-edges;
   }
-  .card-icon.owned svg{ filter:drop-shadow(0 0 5px rgba(60,220,90,.9)); }
-  .card-icon.owned .card-body{ stroke:#3ddc63; }
+  .card-icon.owned{
+    filter:none; opacity:1; transform:scale(1.15);
+  }
+  .card-icon.owned img{ filter:drop-shadow(0 0 5px rgba(60,220,99,.95)); }
 
   /* ---- GM settings: card toggle tiles turn green (not the app's usual orange "active")
      to match the topbar icon's own access-granted colour ---- */
@@ -466,9 +464,9 @@
       <div class="hbar-label"><span id="hbarPct">0%</span>Odhaleno</div>
     </div>
     <div class="cards-row" id="cardsRow">
-      <div class="card-icon" id="cardIcon-blue" data-card="blue" title="Modrá karta"><svg viewBox="0 0 28 20"><rect x="1" y="1" width="26" height="18" rx="3" class="card-body"/><rect x="1" y="1" width="26" height="5" rx="3" class="card-stripe" style="fill:#2f8fe0;"/><circle cx="7" cy="13" r="2.4" class="card-dot"/><rect x="12" y="11" width="12" height="1.6" rx=".8" class="card-line"/><rect x="12" y="14" width="8" height="1.6" rx=".8" class="card-line"/></svg></div>
-      <div class="card-icon" id="cardIcon-yellow" data-card="yellow" title="Žlutá karta"><svg viewBox="0 0 28 20"><rect x="1" y="1" width="26" height="18" rx="3" class="card-body"/><rect x="1" y="1" width="26" height="5" rx="3" class="card-stripe" style="fill:#e0c22f;"/><circle cx="7" cy="13" r="2.4" class="card-dot"/><rect x="12" y="11" width="12" height="1.6" rx=".8" class="card-line"/><rect x="12" y="14" width="8" height="1.6" rx=".8" class="card-line"/></svg></div>
-      <div class="card-icon" id="cardIcon-red" data-card="red" title="Červená karta"><svg viewBox="0 0 28 20"><rect x="1" y="1" width="26" height="18" rx="3" class="card-body"/><rect x="1" y="1" width="26" height="5" rx="3" class="card-stripe" style="fill:#e0402f;"/><circle cx="7" cy="13" r="2.4" class="card-dot"/><rect x="12" y="11" width="12" height="1.6" rx=".8" class="card-line"/><rect x="12" y="14" width="8" height="1.6" rx=".8" class="card-line"/></svg></div>
+      <div class="card-icon" id="cardIcon-blue" data-card="blue" title="Modrá karta"><img src="cards/card-blue.png" alt="Modrá karta"></div>
+      <div class="card-icon" id="cardIcon-yellow" data-card="yellow" title="Žlutá karta"><img src="cards/card-yellow.png" alt="Žlutá karta"></div>
+      <div class="card-icon" id="cardIcon-red" data-card="red" title="Červená karta"><img src="cards/card-red.png" alt="Červená karta"></div>
     </div>
     <div style="display:flex;gap:8px;align-items:center;">
       <span class="sync-badge" id="syncBadge"><span class="dot2"></span><span id="syncBadgeText">offline</span></span>
