@@ -88,9 +88,25 @@
     image-rendering:pixelated; image-rendering:crisp-edges;
   }
   .card-icon.owned{
-    filter:none; opacity:1; transform:scale(1.15);
+    filter:none; opacity:1; transform:scale(1.2);
+    border-radius:6px;
+    background:radial-gradient(circle, rgba(60,220,99,.55) 0%, rgba(60,220,99,0) 70%);
+    animation:cardGlowPulse 1.6s ease-in-out infinite;
   }
-  .card-icon.owned img{ filter:drop-shadow(0 0 5px rgba(60,220,99,.95)); }
+  .card-icon.owned img{
+    filter:
+      drop-shadow(0 0 4px rgba(120,255,150,1))
+      drop-shadow(0 0 10px rgba(60,220,99,.95))
+      drop-shadow(0 0 18px rgba(60,220,99,.75));
+  }
+  @keyframes cardGlowPulse{
+    0%,100%{
+      background:radial-gradient(circle, rgba(60,220,99,.5) 0%, rgba(60,220,99,0) 70%);
+    }
+    50%{
+      background:radial-gradient(circle, rgba(120,255,150,.85) 0%, rgba(60,220,99,0) 72%);
+    }
+  }
 
   /* ---- GM settings: card toggle tiles turn green (not the app's usual orange "active")
      to match the topbar icon's own access-granted colour ---- */
@@ -2607,49 +2623,12 @@
     const linesEl = document.getElementById('bootLines');
     const MAX_VISIBLE_LINES = 15;
 
-    // `fast:true` lines type and advance quickly (verbose filler); the rest type slowly
-    // so the player can actually read the important status lines.
+    // Short original sequence (pre-hacking-montage version), just without the matrix rain.
     const lines = [
       { text:'INICIALIZACE SYSTÉMU...' },
-      { text:'root@ORION-CORE:~# ssh gm@10.0.4.12 -p 22', fast:true },
-      { text:'Connecting to 10.0.4.12 (10.0.4.12) port 22.', fast:true },
-      { text:"Warning: Permanently added '10.0.4.12' (ED25519) to the list of known hosts.", fast:true },
-      { text:'Authenticating with public key "orion_master_key"...', fast:true },
-      { text:'Access granted. Last login: Tue Sep 15 03:41:02 2287 from 10.0.4.1', fast:true },
       { text:'PŘIPOJOVÁNÍ K SERVERU STANICE ORION...' },
-      { text:'root@ORION-CORE:/# uname -a', fast:true },
-      { text:'Linux orion-core 5.14.0-orion #1 SMP PREEMPT x86_64 GNU/Linux', fast:true },
-      { text:'root@ORION-CORE:/# systemctl status station-mapd.service', fast:true },
-      { text:'● station-mapd.service - Station Mapping Daemon', fast:true },
-      { text:'   Loaded: loaded (/etc/systemd/system/station-mapd.service; enabled)', fast:true },
-      { text:'   Active: active (running)', fast:true },
-      { text:'OVĚŘOVÁNÍ PŘÍSTUPOVÝCH PRÁV...' },
-      { text:'root@ORION-CORE:/# sudo ./bypass_firewall.sh --target=orion.local', fast:true },
-      { text:'[*] Probing 24 open ports...', fast:true },
-      { text:'[*] Firewall rule 0x4F2A bypassed', fast:true },
-      { text:'[*] Escalating privileges... done', fast:true },
       { text:'OVĚŘOVÁNÍ PŘÍSTUPOVÝCH PRÁV... OK' },
-      { text:'DEŠIFROVÁNÍ BEZPEČNOSTNÍHO PROTOKOLU...' },
-      { text:'root@ORION-CORE:/# mount | grep orion', fast:true },
-      { text:'/dev/orion0 on /station type ext4 (rw,noatime)', fast:true },
-      { text:'/dev/orion1 on /station/vault type luks (rw,nosuid)', fast:true },
-      { text:'root@ORION-CORE:/# ls -la /station/sectors/', fast:true },
-      { text:'drwxr-xr-x  entry_section', fast:true },
-      { text:'drwxr-xr-x  living_quarters', fast:true },
-      { text:'drwxr-xr-x  security_and_command', fast:true },
-      { text:'drwxr-xr-x  research_and_development', fast:true },
-      { text:'drwxr-xr-x  engineering_and_maintenance', fast:true },
-      { text:'root@ORION-CORE:/# cat /var/log/orion/access.log | tail -5', fast:true },
-      { text:'[ 12:04:41 ] AUTH  uac_reader_03  card=BLUE   status=OK', fast:true },
-      { text:'[ 12:04:52 ] AUTH  uac_reader_07  card=YELLOW status=DENIED', fast:true },
-      { text:'[ 12:05:10 ] AUTH  uac_reader_11  card=RED    status=OK', fast:true },
       { text:'SYNCHRONIZACE DAT SE STANICÍ...' },
-      { text:'root@ORION-CORE:/# ping -c 1 station.orion.local', fast:true },
-      { text:'64 bytes from station.orion.local: icmp_seq=1 ttl=64 time=0.031 ms', fast:true },
-      { text:'root@ORION-CORE:/# rsync -avz /station/map ./local_cache/', fast:true },
-      { text:'sending incremental file list', fast:true },
-      { text:'map.dat', fast:true },
-      { text:'sent 84,213 bytes  received 412 bytes  56,417 bytes/sec', fast:true },
       { text:'NAČÍTÁNÍ MAPY STANICE...' },
       { text:'PŘIPOJENO.' },
     ];
