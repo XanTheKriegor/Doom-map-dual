@@ -71,6 +71,35 @@
   }
   #hbarPct{ font-size:19px; font-weight:700; color:#fff; letter-spacing:0; text-transform:none; }
 
+  /* ---- UAC access card icons: appear in the top bar once the central hub is revealed.
+     Own, original badge design (rounded body, color stripe, "photo" dot, text lines) -
+     not a reproduction of any game's specific card art. Grey/dim until the GM marks that
+     card as picked up in settings, then it lights up in green (an access-granted colour,
+     independent of the card's own blue/yellow/red identity stripe, which stays visible
+     the whole time so the three stay tellable apart even before they're picked up). ---- */
+  .cards-row{ display:none; align-items:center; gap:5px; margin:0 2px; }
+  .cards-row.visible{ display:flex; }
+  .card-icon{
+    width:26px; height:19px;
+    filter:grayscale(1) brightness(.55); opacity:.55;
+    transition:filter .35s ease, opacity .35s ease, transform .3s ease;
+  }
+  .card-icon svg{ display:block; width:100%; height:100%; overflow:visible; }
+  .card-icon .card-body{ fill:#1c232b; stroke:rgba(255,255,255,.35); stroke-width:1; }
+  .card-icon .card-dot{ fill:rgba(255,255,255,.55); }
+  .card-icon .card-line{ fill:rgba(255,255,255,.35); }
+  .card-icon.owned{
+    filter:none; opacity:1; transform:scale(1.07);
+  }
+  .card-icon.owned svg{ filter:drop-shadow(0 0 5px rgba(60,220,90,.9)); }
+  .card-icon.owned .card-body{ stroke:#3ddc63; }
+
+  /* ---- GM settings: card toggle tiles turn green (not the app's usual orange "active")
+     to match the topbar icon's own access-granted colour ---- */
+  .tile.card-active{
+    background:rgba(61,220,99,.18); border-color:#3ddc63; color:#eafff0; font-weight:600;
+  }
+
   /* ---- GM setting: segmented switch to pick the progress display style ---- */
   .seg-switch{
     position:relative; display:flex; background:#161c22; border:1px solid var(--line);
@@ -435,6 +464,11 @@
     <div class="hbar-wrap" id="hbarWrap">
       <div class="hbar-track"><div class="hbar-fill" id="hbarFill"></div></div>
       <div class="hbar-label"><span id="hbarPct">0%</span>Odhaleno</div>
+    </div>
+    <div class="cards-row" id="cardsRow">
+      <div class="card-icon" id="cardIcon-blue" data-card="blue" title="Modrá karta"><svg viewBox="0 0 28 20"><rect x="1" y="1" width="26" height="18" rx="3" class="card-body"/><rect x="1" y="1" width="26" height="5" rx="3" class="card-stripe" style="fill:#2f8fe0;"/><circle cx="7" cy="13" r="2.4" class="card-dot"/><rect x="12" y="11" width="12" height="1.6" rx=".8" class="card-line"/><rect x="12" y="14" width="8" height="1.6" rx=".8" class="card-line"/></svg></div>
+      <div class="card-icon" id="cardIcon-yellow" data-card="yellow" title="Žlutá karta"><svg viewBox="0 0 28 20"><rect x="1" y="1" width="26" height="18" rx="3" class="card-body"/><rect x="1" y="1" width="26" height="5" rx="3" class="card-stripe" style="fill:#e0c22f;"/><circle cx="7" cy="13" r="2.4" class="card-dot"/><rect x="12" y="11" width="12" height="1.6" rx=".8" class="card-line"/><rect x="12" y="14" width="8" height="1.6" rx=".8" class="card-line"/></svg></div>
+      <div class="card-icon" id="cardIcon-red" data-card="red" title="Červená karta"><svg viewBox="0 0 28 20"><rect x="1" y="1" width="26" height="18" rx="3" class="card-body"/><rect x="1" y="1" width="26" height="5" rx="3" class="card-stripe" style="fill:#e0402f;"/><circle cx="7" cy="13" r="2.4" class="card-dot"/><rect x="12" y="11" width="12" height="1.6" rx=".8" class="card-line"/><rect x="12" y="14" width="8" height="1.6" rx=".8" class="card-line"/></svg></div>
     </div>
     <div style="display:flex;gap:8px;align-items:center;">
       <span class="sync-badge" id="syncBadge"><span class="dot2"></span><span id="syncBadgeText">offline</span></span>
@@ -1752,6 +1786,26 @@
   ];
   let activeRunes = new Set();
 
+  // ---------- UAC access cards ----------
+  // Independent of rooms/runes: three keycards that appear (as icons in the top bar,
+  // greyed out) once the central hub is revealed, and that the GM marks as "picked up"
+  // one by one from settings, at which point they light up green for everyone.
+  const CARD_DEFS = [
+    { key:'blue',   label:'Modrá karta' },
+    { key:'yellow', label:'Žlutá karta' },
+    { key:'red',    label:'Červená karta' },
+  ];
+  let ownedCards = new Set();
+  function renderCardsRow(){
+    const row = document.getElementById('cardsRow');
+    if(!row) return;
+    row.classList.toggle('visible', revealed.has('central-hub'));
+    for(const card of CARD_DEFS){
+      const icon = document.getElementById('cardIcon-' + card.key);
+      if(icon) icon.classList.toggle('owned', ownedCards.has(card.key));
+    }
+  }
+
   // ---------- GM / player mode ----------
   // Open with "?gm" in the URL on the GM's own device (laptop) to get full controls.
   // Open the plain URL (no "?gm") on the player-facing tablet: bare map, no controls,
@@ -1798,12 +1852,14 @@
   function applyRemoteState(data){
     revealed = new Set(Array.isArray(data.revealed) ? data.revealed : []);
     activeRunes = new Set(Array.isArray(data.activeRunes) ? data.activeRunes : []);
+    ownedCards = new Set(Array.isArray(data.cards) ? data.cards : []);
     if(data.progressStyle === 'tube' || data.progressStyle === 'bar') applyProgressStyle(data.progressStyle, {silent:true});
     render(); renderNav();
     // keep localStorage as an offline fallback mirror of whatever we last saw
     if(localStorageAvailable){
       try{ localStorage.setItem('orion-revealed-rooms', JSON.stringify(Array.from(revealed))); }catch(e){}
       try{ localStorage.setItem('orion-active-runes', JSON.stringify(Array.from(activeRunes))); }catch(e){}
+      try{ localStorage.setItem('orion-cards', JSON.stringify(Array.from(ownedCards))); }catch(e){}
       try{ localStorage.setItem('orion-progress-style', progressStyle); }catch(e){}
     }
   }
@@ -1814,6 +1870,7 @@
     fbDocRef.set({
       revealed: Array.from(revealed),
       activeRunes: Array.from(activeRunes),
+      cards: Array.from(ownedCards),
       progressStyle: progressStyle,
       updatedAt: Date.now()
     }, {merge:true}).then(()=>{
@@ -1989,6 +2046,7 @@
 
   function render(){
     updateProgress();
+    renderCardsRow();
     canvas.innerHTML = '';
     if(revealed.size === 0 && activeRunes.size === 0){
       emptyHint.style.display = '';
@@ -2092,6 +2150,10 @@
         if(res2 && res2.value) activeRunes = new Set(JSON.parse(res2.value));
       }catch(e){ /* nothing saved yet */ }
       try{
+        const resCards = await window.storage.get('orion-cards', false);
+        if(resCards && resCards.value) ownedCards = new Set(JSON.parse(resCards.value));
+      }catch(e){ /* nothing saved yet */ }
+      try{
         const resStyle = await window.storage.get('orion-progress-style', false);
         if(resStyle && resStyle.value) applyProgressStyle(resStyle.value, {silent:true});
       }catch(e){ /* nothing saved yet */ }
@@ -2103,6 +2165,10 @@
       try{
         const v2 = localStorage.getItem('orion-active-runes');
         if(v2) activeRunes = new Set(JSON.parse(v2));
+      }catch(e){ /* nothing saved yet */ }
+      try{
+        const vCards = localStorage.getItem('orion-cards');
+        if(vCards) ownedCards = new Set(JSON.parse(vCards));
       }catch(e){ /* nothing saved yet */ }
       try{
         const vStyle = localStorage.getItem('orion-progress-style');
@@ -2118,10 +2184,14 @@
       catch(e){ /* best-effort only */ }
       try{ await window.storage.set('orion-active-runes', JSON.stringify(Array.from(activeRunes)), false); }
       catch(e){ /* best-effort only */ }
+      try{ await window.storage.set('orion-cards', JSON.stringify(Array.from(ownedCards)), false); }
+      catch(e){ /* best-effort only */ }
     } else if(localStorageAvailable){
       try{ localStorage.setItem('orion-revealed-rooms', JSON.stringify(Array.from(revealed))); }
       catch(e){ /* best-effort only */ }
       try{ localStorage.setItem('orion-active-runes', JSON.stringify(Array.from(activeRunes))); }
+      catch(e){ /* best-effort only */ }
+      try{ localStorage.setItem('orion-cards', JSON.stringify(Array.from(ownedCards))); }
       catch(e){ /* best-effort only */ }
     }
     // push to the shared Firestore doc so the player tablet updates live (GM only - the
@@ -2160,8 +2230,9 @@
 
   function makeTile(label, onClick, opts){
     opts = opts || {};
+    const activeClass = opts.activeClass || 'active';
     const btn = document.createElement('button');
-    btn.className = 'tile' + (opts.active ? ' active' : '') + (opts.disabled ? ' disabled' : '');
+    btn.className = 'tile' + (opts.active ? ' ' + activeClass : '') + (opts.disabled ? ' disabled' : '');
     btn.textContent = label + (opts.active ? '  ✓' : '');
     if(!opts.disabled) btn.addEventListener('click', onClick);
     return btn;
@@ -2189,6 +2260,7 @@
       title.textContent = 'Menu';
       grid.appendChild(makeTile('Místnosti', ()=>{ navLevel = 1; renderNav(); }));
       grid.appendChild(makeTile(`Runy (${activeRunes.size}/${RUNES.length})`, ()=>{ navLevel = 3; renderNav(); }));
+      grid.appendChild(makeTile(`Karty (${ownedCards.size}/${CARD_DEFS.length})`, ()=>{ navLevel = 4; renderNav(); }));
 
     } else if(navLevel === 1){
       backBtn.style.display = '';
@@ -2236,6 +2308,22 @@
           render(); saveState(); renderNav();
         }, {active: activeRunes.has(rune.num), disabled: rune.gx === undefined}));
       }
+    } else if(navLevel === 4){
+      backBtn.style.display = '';
+      title.textContent = 'Karty';
+      if(!revealed.has('central-hub')){
+        const note = document.createElement('div');
+        note.className = 'empty-note';
+        note.textContent = 'Karty se objeví hráčům až po odhalení central hubu, ale jejich stav můžeš nastavit už teď.';
+        grid.appendChild(note);
+      }
+      for(const card of CARD_DEFS){
+        grid.appendChild(makeTile(card.label, ()=>{
+          if(ownedCards.has(card.key)) ownedCards.delete(card.key);
+          else ownedCards.add(card.key);
+          render(); saveState(); renderNav();
+        }, {active: ownedCards.has(card.key), activeClass: 'card-active'}));
+      }
     }
   }
 
@@ -2243,6 +2331,7 @@
     if(navLevel === 2) navLevel = 1;
     else if(navLevel === 1) navLevel = 0;
     else if(navLevel === 3) navLevel = 0;
+    else if(navLevel === 4) navLevel = 0;
     renderNav();
   });
 
