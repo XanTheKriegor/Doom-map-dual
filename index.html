@@ -439,6 +439,46 @@
   #confirmBox p{margin:0 0 16px;font-size:13px;color:var(--text);line-height:1.5;}
   #confirmBox .row{display:flex;gap:10px;}
   #confirmBox .row button{flex:1;}
+
+  /* ---------- GM password gate ---------- */
+  #gmAuthGate{
+    position:fixed;inset:0;z-index:99999;background:var(--bg);
+    display:flex;align-items:center;justify-content:center;padding:20px;
+  }
+  #gmAuthBox{
+    max-width:340px;width:100%;text-align:center;
+    background:var(--panel);border:1px solid var(--danger);border-radius:8px;
+    padding:28px 24px;box-shadow:0 0 0 1px rgba(224,101,79,.15), 0 12px 34px rgba(0,0,0,.6);
+  }
+  #gmAuthWarning{
+    font-size:15px;font-weight:700;letter-spacing:.08em;color:var(--danger);
+    text-shadow:0 0 10px rgba(224,101,79,.5);margin-bottom:12px;
+  }
+  #gmAuthText{
+    font-size:12.5px;line-height:1.6;color:var(--text-dim);margin-bottom:20px;
+  }
+  #gmAuthInput{
+    width:100%;box-sizing:border-box;font-family:inherit;font-size:14px;text-align:center;
+    letter-spacing:.1em;background:var(--panel-2);color:var(--text);
+    border:1px solid var(--line);border-radius:4px;padding:10px 12px;margin-bottom:12px;
+  }
+  #gmAuthInput:focus{outline:none;border-color:var(--danger);}
+  #gmAuthSubmit{
+    width:100%;border-color:var(--danger);color:var(--danger);font-weight:600;
+  }
+  #gmAuthSubmit:hover{background:var(--danger);color:#1a0906;}
+  #gmAuthError{
+    display:none;margin-top:12px;font-size:11.5px;color:var(--danger);letter-spacing:.04em;
+  }
+  #gmAuthBox.shake{ animation:gmAuthShake .4s ease; }
+  #gmAuthBox.shake #gmAuthError{ display:block; }
+  @keyframes gmAuthShake{
+    0%,100%{ transform:translateX(0); }
+    20%{ transform:translateX(-8px); }
+    40%{ transform:translateX(7px); }
+    60%{ transform:translateX(-5px); }
+    80%{ transform:translateX(4px); }
+  }
 </style>
 </head>
 <body>
@@ -464,6 +504,22 @@
 
 <div id="bootScreen" style="display:none;">
   <div id="bootText"><pre id="bootLines"></pre></div>
+</div>
+
+<!-- ---------- GM password gate ----------
+     Shown only when the page is opened with "?gm" and this browser hasn't unlocked it
+     before. Purely a deterrent against a player who guesses to tack "?gm" onto the URL -
+     it's a static page with no backend, so this can't be real security, but it stops
+     anyone from casually wandering into the admin controls. Once unlocked it's remembered
+     in this browser's localStorage, so the GM doesn't retype it every reload. -->
+<div id="gmAuthGate" style="display:none;">
+  <div id="gmAuthBox">
+    <div id="gmAuthWarning">POZOR POZOR</div>
+    <div id="gmAuthText">Tohle je sekce pro DM.<br>Pokud jsi hráč, nemáš tu co dělat.</div>
+    <input type="password" id="gmAuthInput" autocomplete="off" placeholder="heslo" />
+    <button id="gmAuthSubmit">Vstoupit</button>
+    <div id="gmAuthError">Špatné heslo.</div>
+  </div>
 </div>
 
 <div id="app">
@@ -2666,6 +2722,48 @@
       return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     }
     typeLine();
+  }
+
+  // ---------- GM password gate ----------
+  // Not real security (it's a static page, anyone could read the hash out of the source
+  // if they went looking) - just a lock on the door so a player who thinks to tack "?gm"
+  // onto the URL doesn't casually wander into the DM controls. Passes once per browser:
+  // remembered in localStorage so the GM isn't retyping it on every reload.
+  const GM_AUTH_KEY = 'orion-gm-authed';
+  const GM_PASSWORD_HASH = '5f6b76b'; // hash of the GM password, not the password itself
+  function simpleHash(str){
+    let h = 0;
+    for(let i=0;i<str.length;i++){ h = (Math.imul(31, h) + str.charCodeAt(i)) | 0; }
+    return (h >>> 0).toString(16);
+  }
+  function gmAuthPassed(){
+    try{ return localStorage.getItem(GM_AUTH_KEY) === '1'; }catch(err){ return false; }
+  }
+  function unlockGmAuth(){
+    try{ localStorage.setItem(GM_AUTH_KEY, '1'); }catch(err){ /* ignore - just won't persist */ }
+    const gate = document.getElementById('gmAuthGate');
+    if(gate) gate.remove();
+  }
+  if(isGM && !gmAuthPassed()){
+    const gate = document.getElementById('gmAuthGate');
+    const box = document.getElementById('gmAuthBox');
+    const input = document.getElementById('gmAuthInput');
+    const submitBtn = document.getElementById('gmAuthSubmit');
+    gate.style.display = 'flex';
+    function tryUnlock(){
+      const val = (input.value || '').trim().toLowerCase();
+      if(val && simpleHash(val) === GM_PASSWORD_HASH){
+        unlockGmAuth();
+      } else {
+        box.classList.remove('shake');
+        void box.offsetWidth; // restart the shake animation on repeated wrong guesses
+        box.classList.add('shake');
+        input.value = '';
+      }
+    }
+    submitBtn.addEventListener('click', tryUnlock);
+    input.addEventListener('keydown', (e)=>{ if(e.key === 'Enter') tryUnlock(); });
+    setTimeout(()=> input.focus(), 50);
   }
 
   // ---------- entry gate (fingerprint scanner) ----------
