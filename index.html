@@ -383,6 +383,55 @@
   #mapStage.locked .zoomctl .zoom-freeonly{ display:none; }
   #fitMapBtn.active{ border-color:var(--accent); color:var(--accent); }
 
+  /* ---------- GM map ping ----------
+     A quick "look here" flash the GM drops with a double-click on the map; synced to
+     every viewer (GM included) through the shared Firestore doc. Lives inside #mapCanvas
+     itself so it pans/zooms along with the map and always points at the right spot
+     regardless of each viewer's own pan/zoom. Purely momentary - not part of the saved
+     revealed/runes/cards state. ---- */
+  .map-ping{ position:absolute; width:0; height:0; pointer-events:none; z-index:6; }
+  .map-ping::before, .map-ping::after{
+    content:''; position:absolute; left:50%; top:50%;
+    border-radius:50%; border:2px solid #fff;
+    box-shadow:0 0 12px #fff, 0 0 4px #fff;
+    transform:translate(-50%,-50%);
+  }
+  .map-ping::before{
+    width:12px; height:12px; background:#fff;
+    animation: mapPingDot 1.8s ease-out forwards;
+  }
+  .map-ping::after{
+    width:12px; height:12px;
+    animation: mapPingRing 1.8s ease-out forwards;
+  }
+  @keyframes mapPingDot{
+    0%{ opacity:1; }
+    65%{ opacity:.9; }
+    100%{ opacity:0; }
+  }
+  @keyframes mapPingRing{
+    0%{ width:12px; height:12px; opacity:.95; border-width:3px; }
+    100%{ width:160px; height:160px; opacity:0; border-width:1px; }
+  }
+
+  /* ---------- GM party-position marker ----------
+     A persistent red dot the GM drops by hovering the map and pressing "X", marking "the
+     party is here right now". Unlike the double-click ping it does not fade - it just sits
+     there (gently pulsing so it stays easy to spot) until the GM points somewhere else and
+     presses "X" again, which moves it. Lives inside #mapCanvas so it pans/zooms with the
+     map, and is part of the saved/synced state so it's still there after a reload. ---- */
+  .party-marker{
+    position:absolute; width:18px; height:18px; margin:-9px 0 0 -9px;
+    border-radius:50%; background:var(--danger);
+    box-shadow:0 0 10px var(--danger), 0 0 3px #fff, 0 0 0 2px rgba(0,0,0,.5);
+    z-index:7; pointer-events:none;
+    animation: partyMarkerPulse 1.8s ease-in-out infinite;
+  }
+  @keyframes partyMarkerPulse{
+    0%,100%{ transform:scale(1); opacity:1; }
+    50%{ transform:scale(1.25); opacity:.75; }
+  }
+
   /* ---------- settings panel (popover) ---------- */
   #settingsPanel{
     position:absolute;top:60px;right:16px;width:300px;max-height:calc(100vh - 80px);overflow-y:auto;
@@ -1815,6 +1864,32 @@
   const canvas = document.getElementById('mapCanvas');
   const emptyHint = document.getElementById('emptyHint');
 
+  // ---------- GM party-position marker: persistent red dot, moved by double-clicking the
+  // map (see setupPanZoom's dblclick handler further down). null = not placed yet. ----------
+  let partyMarker = null; // {x, y} in map-canvas coordinates, or null
+  let partyMarkerEl = null;
+  function renderPartyMarker(){
+    if(!partyMarker){
+      if(partyMarkerEl){ partyMarkerEl.remove(); partyMarkerEl = null; }
+      return;
+    }
+    if(!partyMarkerEl){
+      partyMarkerEl = document.createElement('div');
+      partyMarkerEl.className = 'party-marker';
+      canvas.appendChild(partyMarkerEl);
+    }
+    partyMarkerEl.style.left = partyMarker.x + 'px';
+    partyMarkerEl.style.top = partyMarker.y + 'px';
+  }
+  // GM-only: called when the GM presses "X" while hovering the map, to drop/move the marker
+  // right under the cursor (see the keydown handler in setupPanZoom).
+  function setPartyMarker(x, y){
+    if(!isGM) return;
+    partyMarker = { x, y };
+    renderPartyMarker();
+    saveState();
+  }
+
   // ---------- progress display style: 'tube' (vial) or 'bar' (horizontal, top bar) ----------
   let progressStyle = 'tube';
   function applyProgressStyle(style, opts){
@@ -1922,13 +1997,28 @@
     activeRunes = new Set(Array.isArray(data.activeRunes) ? data.activeRunes : []);
     ownedCards = new Set(Array.isArray(data.cards) ? data.cards : []);
     if(data.progressStyle === 'tube' || data.progressStyle === 'bar') applyProgressStyle(data.progressStyle, {silent:true});
+    partyMarker = (data.partyMarker && typeof data.partyMarker.x === 'number' && typeof data.partyMarker.y === 'number')
+      ? { x: data.partyMarker.x, y: data.partyMarker.y } : null;
+    // render() wipes and rebuilds #mapCanvas from scratch (canvas.innerHTML = '') - it has
+    // to run BEFORE the ping marker below is appended, or it would erase the ping the
+    // instant it's added and no one watching this client would ever actually see it flash.
     render(); renderNav();
+    // GM map ping: only flash it if this is a NEW ping we haven't shown yet, and it's
+    // still fresh - a viewer joining later shouldn't replay a ping from minutes ago just
+    // because it's sitting in the doc.
+    if(data.ping && typeof data.ping.ts === 'number' && data.ping.ts !== lastSeenPingTs){
+      lastSeenPingTs = data.ping.ts;
+      if(Date.now() - data.ping.ts < 8000){
+        spawnPingMarker(data.ping.x, data.ping.y);
+      }
+    }
     // keep localStorage as an offline fallback mirror of whatever we last saw
     if(localStorageAvailable){
       try{ localStorage.setItem('orion-revealed-rooms', JSON.stringify(Array.from(revealed))); }catch(e){}
       try{ localStorage.setItem('orion-active-runes', JSON.stringify(Array.from(activeRunes))); }catch(e){}
       try{ localStorage.setItem('orion-cards', JSON.stringify(Array.from(ownedCards))); }catch(e){}
       try{ localStorage.setItem('orion-progress-style', progressStyle); }catch(e){}
+      try{ localStorage.setItem('orion-party-marker', partyMarker ? JSON.stringify(partyMarker) : ''); }catch(e){}
     }
   }
 
@@ -1940,6 +2030,7 @@
       activeRunes: Array.from(activeRunes),
       cards: Array.from(ownedCards),
       progressStyle: progressStyle,
+      partyMarker: partyMarker,
       updatedAt: Date.now()
     }, {merge:true}).then(()=>{
       setSyncBadge('live', 'synchronizováno');
@@ -1972,6 +2063,29 @@
     }, (err)=>{
       setSyncBadge('err', 'chyba synchronizace');
     });
+  }
+
+  // ---------- GM map pings ----------
+  // The GM double-clicks anywhere on the map to drop a quick radar-style ping that flashes
+  // for every connected viewer (GM included) at that exact map spot - handy for "here, this
+  // room" moments without having to describe it. Purely ephemeral: not part of the saved
+  // revealed/runes/cards state, just a short-lived visual synced through the same Firestore
+  // doc as everything else.
+  let lastSeenPingTs = 0;
+  function spawnPingMarker(x, y){
+    const marker = document.createElement('div');
+    marker.className = 'map-ping';
+    marker.style.left = x + 'px';
+    marker.style.top = y + 'px';
+    canvas.appendChild(marker);
+    setTimeout(()=> marker.remove(), 1800);
+  }
+  function pushPingToFirestore(x, y){
+    if(!isGM || !fbReady || !fbDocRef) return;
+    const ts = Date.now();
+    lastSeenPingTs = ts;
+    suppressNextRemoteApply = true;
+    fbDocRef.set({ ping: { x, y, ts } }, {merge:true}).catch(()=>{});
   }
 
   // Drips a blood drop from the top of the tube down to wherever the liquid surface
@@ -2117,8 +2231,10 @@
     updateProgress();
     renderCardsRow();
     canvas.innerHTML = '';
+    partyMarkerEl = null; // wiped along with everything else above - rebuild it below
     if(revealed.size === 0 && activeRunes.size === 0){
       emptyHint.style.display = '';
+      renderPartyMarker();
       return;
     }
     emptyHint.style.display = 'none';
@@ -2160,6 +2276,7 @@
     }
 
     canvas.appendChild(svg);
+    renderPartyMarker();
   }
 
   function revealRoom(rid){
@@ -2226,6 +2343,10 @@
         const resStyle = await window.storage.get('orion-progress-style', false);
         if(resStyle && resStyle.value) applyProgressStyle(resStyle.value, {silent:true});
       }catch(e){ /* nothing saved yet */ }
+      try{
+        const resMarker = await window.storage.get('orion-party-marker', false);
+        if(resMarker && resMarker.value) partyMarker = JSON.parse(resMarker.value);
+      }catch(e){ /* nothing saved yet */ }
     } else if(localStorageAvailable){
       try{
         const v = localStorage.getItem('orion-revealed-rooms');
@@ -2243,6 +2364,10 @@
         const vStyle = localStorage.getItem('orion-progress-style');
         if(vStyle) applyProgressStyle(vStyle, {silent:true});
       }catch(e){ /* nothing saved yet */ }
+      try{
+        const vMarker = localStorage.getItem('orion-party-marker');
+        if(vMarker) partyMarker = JSON.parse(vMarker);
+      }catch(e){ /* nothing saved yet */ }
     }
     render();
     renderNav();
@@ -2255,12 +2380,16 @@
       catch(e){ /* best-effort only */ }
       try{ await window.storage.set('orion-cards', JSON.stringify(Array.from(ownedCards)), false); }
       catch(e){ /* best-effort only */ }
+      try{ await window.storage.set('orion-party-marker', partyMarker ? JSON.stringify(partyMarker) : '', false); }
+      catch(e){ /* best-effort only */ }
     } else if(localStorageAvailable){
       try{ localStorage.setItem('orion-revealed-rooms', JSON.stringify(Array.from(revealed))); }
       catch(e){ /* best-effort only */ }
       try{ localStorage.setItem('orion-active-runes', JSON.stringify(Array.from(activeRunes))); }
       catch(e){ /* best-effort only */ }
       try{ localStorage.setItem('orion-cards', JSON.stringify(Array.from(ownedCards))); }
+      catch(e){ /* best-effort only */ }
+      try{ localStorage.setItem('orion-party-marker', partyMarker ? JSON.stringify(partyMarker) : ''); }
       catch(e){ /* best-effort only */ }
     }
     // push to the shared Firestore doc so the player tablet updates live (GM only - the
@@ -2663,6 +2792,43 @@
     // re-fit if the viewport changes shape while locked (e.g. entering fullscreen,
     // rotating a tablet)
     window.addEventListener('resize', ()=>{ if(mapLocked) fitToScreen(); });
+
+    // GM-only: double-click anywhere on the map to ping that exact spot for every viewer,
+    // this one included - independent of the lock/pan/zoom state, since it doesn't move
+    // the view, just flashes on top of it for a second and fades.
+    stage.addEventListener('dblclick', (e)=>{
+      if(!isGM) return;
+      if(e.target.closest('button')) return;
+      e.preventDefault();
+      const rect = stage.getBoundingClientRect();
+      const cx = (e.clientX - rect.left - panX) / scale;
+      const cy = (e.clientY - rect.top - panY) / scale;
+      spawnPingMarker(cx, cy);
+      pushPingToFirestore(cx, cy);
+    });
+
+    // GM-only: track the cursor's last position over the map (in client coordinates) so
+    // pressing "X" can drop/move the persistent party marker right where the mouse is,
+    // without needing a click. Only tracked while the cursor is actually over the stage.
+    let hoveringStage = false, hoverClientX = 0, hoverClientY = 0;
+    if(isGM){
+      stage.addEventListener('pointermove', (e)=>{
+        hoverClientX = e.clientX; hoverClientY = e.clientY;
+      });
+      stage.addEventListener('pointerenter', ()=>{ hoveringStage = true; });
+      stage.addEventListener('pointerleave', ()=>{ hoveringStage = false; });
+      window.addEventListener('keydown', (e)=>{
+        if(e.key.toLowerCase() !== 'x') return;
+        // don't hijack typing "x" into a text field (password gate, settings, etc.)
+        const tag = e.target && e.target.tagName;
+        if(tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+        if(!hoveringStage) return;
+        const rect = stage.getBoundingClientRect();
+        const cx = (hoverClientX - rect.left - panX) / scale;
+        const cy = (hoverClientY - rect.top - panY) / scale;
+        setPartyMarker(cx, cy);
+      });
+    }
 
     apply();
   }
